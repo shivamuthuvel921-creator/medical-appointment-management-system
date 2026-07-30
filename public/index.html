@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Visit — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .specialties-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+    .specialty-item {
+      padding: 0.8rem;
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+    }
+    .specialty-item strong { color: var(--primary); }
+    .appointment-cards { display: grid; gap: 0.75rem; }
+    .appt-card {
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: start;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .appt-card:hover {
+      border-color: var(--primary);
+      box-shadow: var(--shadow);
+    }
+    .appt-info { display: grid; gap: 0.25rem; }
+    .appt-info .name {
+      font-weight: 700;
+      color: var(--gray-800);
+    }
+    .appt-info .meta {
+      font-size: 0.8rem;
+      color: var(--gray-500);
+    }
+    .appt-info .meta span { margin-right: 0.75rem; }
+    .appt-actions { display: flex; gap: 0.4rem; align-items: center; }
+    @media (max-width: 500px) {
+      .appt-card { grid-template-columns: 1fr; }
+      .appt-actions { justify-content: flex-end; }
+    }
+    #appointments-section { scroll-margin-top: 5rem; }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/login.html">Login</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Medication Appointment Portal</h1>
+      <p>Book safe and timely medication consultations with trusted doctors.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Clinic Specialties</h2>
+        <div class="specialties-grid">
+          <div class="specialty-item"><strong>General Medicine</strong><br />Routine care &amp; prescriptions</div>
+          <div class="specialty-item"><strong>Cardiology</strong><br />Heart health follow-ups</div>
+          <div class="specialty-item"><strong>Diabetes Care</strong><br />Medication review &amp; monitoring</div>
+          <div class="specialty-item"><strong>Wellness</strong><br />Preventive healthcare visits</div>
+        </div>
+      </div>
+
+      <div class="card" id="booking">
+        <h2>Book an Appointment</h2>
+        <form id="appointment-form" novalidate>
+          <input name="patientName" placeholder="Patient name" required />
+          <input name="medication" placeholder="Medication" required />
+          <input name="doctorName" placeholder="Doctor name" required />
+          <input type="date" name="appointmentDate" required />
+          <input type="time" name="appointmentTime" required />
+          <textarea name="notes" placeholder="Notes (optional)"></textarea>
+          <select name="status">
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button type="submit" class="btn btn-primary" id="submit-btn">Save Appointment</button>
+        </form>
+      </div>
+    </div>
+
+    <section id="appointments-section" style="margin-top: 1.5rem;">
+      <div class="card">
+        <h2>Appointments</h2>
+        <div id="appointment-list"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal">
+      <h3>Cancel Appointment</h3>
+      <p>Are you sure you want to cancel this appointment? This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-sm" id="modal-cancel">Keep</button>
+        <button class="btn btn-danger btn-sm" id="modal-confirm">Yes, Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('appointment-form');
+    const list = document.getElementById('appointment-list');
+    const submitBtn = document.getElementById('submit-btn');
+    const toast = document.getElementById('toast');
+    const modal = document.getElementById('confirm-modal');
+    let deleteTarget = null;
+
+    function showToast(msg, type) {
+      toast.textContent = msg;
+      toast.className = 'toast toast-' + type + ' show';
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    async function loadAppointments() {
+      list.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading appointments...</div>';
+      try {
+        const res = await fetch('/api/appointments');
+        if (!res.ok) throw new Error('Failed to load');
+        return await res.json();
+      } catch {
+        list.innerHTML = '<div class="empty-state"><strong>Could not load appointments</strong><p>Check that the server is running.</p></div>';
+        return null;
+      }
+    }
+
+    function renderAppointments(appointments) {
+      if (!appointments || appointments.length === 0) {
+        list.innerHTML = '<div class="empty-state"><strong>No appointments yet</strong><p>Book your first appointment above.</p></div>';
+        return;
+      }
+
+      list.innerHTML = '<div class="appointment-cards">' +
+        appointments.map(a => `
+          <div class="appt-card">
+            <div class="appt-info">
+              <div class="name">${esc(a.patientName)} — ${esc(a.medication)}</div>
+              <div class="meta">
+                <span>Dr. ${esc(a.doctorName)}</span>
+                <span>${a.appointmentDate} ${a.appointmentTime}</span>
+              </div>
+              <div class="meta">
+                <span class="status-badge status-${a.status}">${a.status}</span>
+                ${a.notes ? '<span>Notes: ' + esc(a.notes) + '</span>' : ''}
+              </div>
+            </div>
+            <div class="appt-actions">
+              <button class="btn btn-danger btn-sm" data-id="${a.id}">Cancel</button>
+            </div>
+          </div>
+        `).join('') + '</div>';
+
+      document.querySelectorAll('[data-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          deleteTarget = btn.dataset.id;
+          modal.classList.add('open');
+        });
+      });
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function refreshList() {
+      const data = await loadAppointments();
+      if (data !== null) renderAppointments(data);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+
+      const fd = new FormData(form);
+      const payload = {
+        patientName: fd.get('patientName').toString().trim(),
+        medication: fd.get('medication').toString().trim(),
+        doctorName: fd.get('doctorName').toString().trim(),
+        appointmentDate: fd.get('appointmentDate').toString().trim(),
+        appointmentTime: fd.get('appointmentTime').toString().trim(),
+        notes: fd.get('notes').toString().trim(),
+        status: fd.get('status').toString().trim(),
+      };
+
+      try {
+        const res = await fetch('/api/appointments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.error || 'Failed to save', 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Save Appointment';
+          return;
+        }
+
+        form.reset();
+        showToast('Appointment booked successfully', 'success');
+        await refreshList();
+      } catch {
+        showToast('Network error — could not save', 'error');
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save Appointment';
+    });
+
+    document.getElementById('modal-cancel').addEventListener('click', () => {
+      modal.classList.remove('open');
+      deleteTarget = null;
+    });
+
+    document.getElementById('modal-confirm').addEventListener('click', async () => {
+      if (!deleteTarget) return;
+      modal.classList.remove('open');
+
+      try {
+        const res = await fetch('/api/appointments/' + deleteTarget, { method: 'DELETE' });
+        if (!res.ok) {
+          showToast('Could not cancel appointment', 'error');
+        } else {
+          showToast('Appointment cancelled', 'success');
+        }
+        await refreshList();
+      } catch {
+        showToast('Network error', 'error');
+      }
+
+      deleteTarget = null;
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) { modal.classList.remove('open'); deleteTarget = null; }
+    });
+
+    refreshList();
+  </script>
+</body>
+</html>

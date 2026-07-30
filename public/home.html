@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Home — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .welcome-badge {
+      display: inline-block;
+      margin-bottom: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: var(--radius-full);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .hero-heading {
+      font-size: 1.6rem;
+      color: var(--primary);
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 0.6rem;
+    }
+    .hero-text {
+      color: var(--gray-500);
+      line-height: 1.7;
+      font-size: 0.9rem;
+      max-width: 480px;
+    }
+    .hero-btns {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1.2rem;
+    }
+    .hero-content {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .hero-right {
+      background: linear-gradient(135deg, var(--primary-light), #d8f0df);
+      padding: 1.2rem;
+      border-radius: var(--radius);
+      display: grid;
+      gap: 0.75rem;
+    }
+    .info-card {
+      background: white;
+      border-radius: var(--radius-sm);
+      padding: 0.9rem;
+      box-shadow: var(--shadow);
+    }
+    .info-card strong { color: var(--primary); display: block; margin-bottom: 0.15rem; }
+    .info-card p { font-size: 0.8rem; color: var(--gray-500); margin: 0; }
+    @media (max-width: 700px) {
+      .hero-content { grid-template-columns: 1fr; }
+      .hero-heading { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/login.html">Login</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div class="hero-content">
+        <div>
+          <div class="welcome-badge" id="welcome-banner">Welcome</div>
+          <h1 class="hero-heading">Medication appointments made easy</h1>
+          <p class="hero-text">
+            Welcome to our clinic portal. Manage medication consultations, book appointments, and keep every visit organized in one simple place.
+          </p>
+          <div class="hero-btns">
+            <a class="btn btn-primary" href="/index.html#booking">Book Appointment</a>
+            <a class="btn btn-outline" href="/index.html#appointments-section">View Appointments</a>
+            <a class="btn btn-outline" href="/doctor-details.html">Our Doctors</a>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="info-card">
+            <strong>Fast booking</strong>
+            <p>Reserve a consultation for medication review or treatment follow-up.</p>
+          </div>
+          <div class="info-card">
+            <strong>Trusted care</strong>
+            <p>Connect with doctors and manage your appointment details with ease.</p>
+          </div>
+          <div class="info-card">
+            <strong>Organized visits</strong>
+            <p>See upcoming appointments and keep records simple and clear.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const banner = document.getElementById('welcome-banner');
+    const user = localStorage.getItem('medcare-current-user');
+    if (user) banner.textContent = 'Welcome, ' + user;
+  </script>
+</body>
+</html>
