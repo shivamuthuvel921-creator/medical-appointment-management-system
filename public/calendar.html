@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendar — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
+      <a href="/login.html" id="login-link">Login</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Calendar</h1>
+      <p>See your appointments at a glance.</p>
+    </div>
+
+    <div class="card">
+      <div class="calendar-toolbar">
+        <button class="btn btn-outline btn-sm" id="prev-month">← Prev</button>
+        <h2 id="month-label" style="margin:0;">—</h2>
+        <button class="btn btn-outline btn-sm" id="next-month">Next →</button>
+      </div>
+      <div class="calendar-head">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="calendar-grid" id="calendar-grid">
+        <div class="loading-wrap"><div class="spinner"></div>Loading calendar...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { isLoggedIn, isAdmin, api, setupNav, esc, emptyState } from './common.js';
+
+    if (!isLoggedIn()) window.location.href = '/login.html';
+
+    setupNav('/calendar.html');
+
+    let viewYear, viewMonth, appointments = [];
+
+    function now() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth(), day: d.getDate() }; }
+    const t = now();
+    viewYear = t.y;
+    viewMonth = t.m;
+
+    function loadAppointments() {
+      appointments = [];
+      render();
+    }
+
+    function render() {
+      const first = new Date(viewYear, viewMonth, 1);
+      const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const startWeekday = first.getDay();
+      const prevDays = new Date(viewYear, viewMonth, 0).getDate();
+      const today = now();
+
+      document.getElementById('month-label').textContent = first.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+      let html = '';
+      for (let i = 0; i < startWeekday; i++) {
+        html += `<div class="calendar-day other-month"><span class="day-num">${prevDays - startWeekday + i + 1}</span></div>`;
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const isToday = viewYear === today.y && viewMonth === today.m && d === today.day;
+        const evts = appointments.filter(a => a.appointmentDate === dateStr);
+        html += `<div class="calendar-day${isToday ? ' today' : ''}">
+          <span class="day-num">${d}</span>
+          ${evts.map(a => `<span class="evt ${a.status}">${esc(a.appointmentTime)} ${esc(a.patientName)} / Dr. ${esc(a.doctorName)}</span>`).join('')}
+        </div>`;
+      }
+      const totalCells = startWeekday + daysInMonth;
+      for (let i = totalCells; i < 42; i++) {
+        html += `<div class="calendar-day other-month"><span class="day-num">${i - totalCells + 1}</span></div>`;
+      }
+      document.getElementById('calendar-grid').innerHTML = html;
+    }
+
+    document.getElementById('prev-month').addEventListener('click', () => {
+      viewMonth--;
+      if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+      render();
+    });
+    document.getElementById('next-month').addEventListener('click', () => {
+      viewMonth++;
+      if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      render();
+    });
+
+    (async () => {
+      const res = await api('/api/appointments?limit=1000');
+      if (!res.ok) return;
+      const data = await res.json();
+      appointments = data.data || data;
+      render();
+    })();
+  </script>
+</body>
+</html>

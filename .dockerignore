@@ -2,8 +2,9 @@ node_modules/
 *.db
 *.db-shm
 *.db-wal
-.env
-server.log
-server.err
 uploads/*
 !uploads/.gitkeep
+.git/
+server.log
+server.err
+.env

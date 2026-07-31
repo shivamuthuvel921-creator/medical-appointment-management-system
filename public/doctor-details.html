@@ -80,20 +80,117 @@
         <div id="slot-list"></div>
       </div>
     </div>
+
+    <div id="doctor-section" style="display:none;">
+      <div class="card" style="margin-top:1.5rem;">
+        <h2>My Details</h2>
+        <form id="doctor-profile-form" class="add-doctor-form">
+          <input name="name" id="dp-name" disabled placeholder="Name" />
+          <input name="specialty" id="dp-specialty" placeholder="Specialty" required />
+          <input name="experience" id="dp-experience" placeholder="Experience (e.g. 10+ years)" />
+          <input name="clinic" id="dp-clinic" placeholder="Clinic name" />
+          <input name="phone" id="dp-phone" placeholder="Phone number" class="full-width" />
+          <input name="email" id="dp-email" placeholder="Email address" class="full-width" />
+          <button type="submit" class="btn btn-primary btn-sm full-width">Save My Details</button>
+        </form>
+      </div>
+      <div class="card" style="margin-top:1.5rem;">
+        <h2>My Availability Slots</h2>
+        <p style="font-size:0.8rem;color:var(--gray-400);margin-bottom:0.75rem;">Set when patients can book you. With no slots, any time is allowed.</p>
+        <form class="slot-form" id="doctor-slot-form">
+          <select id="doctor-slot-day" required>
+            <option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option>
+            <option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option>
+          </select>
+          <input type="time" id="doctor-slot-start" required />
+          <input type="time" id="doctor-slot-end" required />
+          <button class="btn btn-primary btn-sm" id="doctor-slot-add" type="button">Add Slot</button>
+        </form>
+        <div id="doctor-slot-list"></div>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="toast"></div>
 
   <script type="module">
-    import { isLoggedIn, isAdmin, api, setupNav, esc, showToast, emptyState } from './common.js';
+    import { isLoggedIn, isAdmin, getUser, api, setupNav, esc, showToast, emptyState } from './common.js';
 
     const grid = document.getElementById('doctor-grid');
     const adminSection = document.getElementById('admin-doctor-section');
+    const doctorSection = document.getElementById('doctor-section');
     const DAYS = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
 
     setupNav('/doctor-details.html');
 
     if (isLoggedIn() && isAdmin()) adminSection.style.display = 'block';
+
+    const currentUser = getUser();
+    if (isLoggedIn() && currentUser && currentUser.role === 'doctor') {
+      doctorSection.style.display = 'block';
+      loadMyDetails();
+    }
+
+    let mySlots = [];
+
+    async function loadMyDetails() {
+      try {
+        const res = await api('/api/doctors/me');
+        if (!res.ok) return;
+        const d = await res.json();
+        document.getElementById('dp-name').value = d.name || '';
+        document.getElementById('dp-specialty').value = d.specialty || '';
+        document.getElementById('dp-experience').value = d.experience || '';
+        document.getElementById('dp-clinic').value = d.clinic || '';
+        document.getElementById('dp-phone').value = d.phone || '';
+        document.getElementById('dp-email').value = d.email || '';
+        renderDoctorSlots(d.slots || []);
+      } catch {}
+    }
+
+    function renderDoctorSlots(slots) {
+      mySlots = slots;
+      const el = document.getElementById('doctor-slot-list');
+      if (!slots.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.75rem;">' + slots.map((s, i) => `
+        <span class="attachment-chip">${esc(DAYS[s.dayOfWeek] + ' ' + s.startTime + '-' + s.endTime)}
+          <button class="del" data-i="${i}" title="Remove">&times;</button></span>`).join('') + '</div>';
+      el.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async () => {
+        const remaining = slots.filter((_, i) => i !== parseInt(btn.dataset.i, 10));
+        const r = await api('/api/doctors/me/slots', { method: 'PUT', body: JSON.stringify({ slots: remaining }) });
+        if (r.ok) renderDoctorSlots(remaining);
+      }));
+    }
+
+    document.getElementById('doctor-profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        specialty: fd.get('specialty').toString().trim(),
+        experience: fd.get('experience').toString().trim(),
+        clinic: fd.get('clinic').toString().trim(),
+        phone: fd.get('phone').toString().trim(),
+        email: fd.get('email').toString().trim(),
+      };
+      const res = await api('/api/doctors/me', { method: 'PUT', body: JSON.stringify(payload) });
+      if (res.ok) { showToast('Details saved'); loadDoctors(); }
+      else { const err = await res.json(); showToast(err.error || 'Failed to save', 'error'); }
+    });
+
+    document.getElementById('doctor-slot-add').addEventListener('click', async () => {
+      const dayOfWeek = parseInt(document.getElementById('doctor-slot-day').value, 10);
+      const startTime = document.getElementById('doctor-slot-start').value;
+      const endTime = document.getElementById('doctor-slot-end').value;
+      if (!startTime || !endTime) return showToast('Fill all slot fields', 'error');
+      const slots = [...mySlots, { dayOfWeek, startTime, endTime }];
+      const r = await api('/api/doctors/me/slots', { method: 'PUT', body: JSON.stringify({ slots }) });
+      if (r.ok) {
+        showToast('Slot added');
+        document.getElementById('doctor-slot-start').value = '';
+        document.getElementById('doctor-slot-end').value = '';
+        renderDoctorSlots(slots);
+      } else showToast('Failed', 'error');
+    });
 
     async function loadDoctors() {
       grid.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading doctors...</div>';

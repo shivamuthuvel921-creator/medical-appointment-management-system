@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
-  getAllDoctors, getDoctorById, getDoctorWithSlots, createDoctor, updateDoctor,
+  getAllDoctors, getDoctorById, getDoctorByUserId, getDoctorWithSlots, createDoctor, updateDoctor,
   deleteDoctorById, getDoctorSlots, setDoctorSlots,
 } from '../database.js';
 
@@ -10,6 +10,55 @@ const router = Router();
 router.get('/', (_req, res) => {
   const doctors = getAllDoctors().map(d => getDoctorWithSlots(d.id));
   res.json(doctors);
+});
+
+function selfDoctor(req, res) {
+  if (req.user.role !== 'doctor') {
+    res.status(403).json({ error: 'Doctor access required' });
+    return null;
+  }
+  const doctor = getDoctorByUserId(req.user.id);
+  if (!doctor) {
+    res.status(404).json({ error: 'No doctor profile linked to this account' });
+    return null;
+  }
+  return doctor;
+}
+
+router.get('/me', authenticate, (req, res) => {
+  const doctor = selfDoctor(req, res);
+  if (!doctor) return;
+  res.json(getDoctorWithSlots(doctor.id));
+});
+
+router.put('/me', authenticate, (req, res) => {
+  const doctor = selfDoctor(req, res);
+  if (!doctor) return;
+
+  const { specialty, experience, clinic, phone, email } = req.body;
+  const updated = updateDoctor(doctor.id, {
+    name: doctor.name,
+    specialty: specialty?.trim() || doctor.specialty,
+    experience: experience?.trim() || doctor.experience,
+    clinic: clinic?.trim() || doctor.clinic,
+    phone: phone?.trim() || doctor.phone,
+    email: email?.trim() || doctor.email,
+  });
+  res.json(updated);
+});
+
+router.put('/me/slots', authenticate, (req, res) => {
+  const doctor = selfDoctor(req, res);
+  if (!doctor) return;
+
+  const slots = Array.isArray(req.body.slots) ? req.body.slots : [];
+  const valid = slots.every(s =>
+    Number.isInteger(s.dayOfWeek) && s.dayOfWeek >= 0 && s.dayOfWeek <= 6 &&
+    typeof s.startTime === 'string' && typeof s.endTime === 'string'
+  );
+  if (!valid) return res.status(400).json({ error: 'Invalid slots (expected {dayOfWeek, startTime, endTime}[])' });
+
+  res.json(setDoctorSlots(doctor.id, slots));
 });
 
 router.get('/:id', (req, res) => {

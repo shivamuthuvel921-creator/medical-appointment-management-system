@@ -97,8 +97,7 @@
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <input type="date" id="filter-date-from" />
-          <input type="date" id="filter-date-to" />
+          <input type="date" id="filter-date-from" placeholder="Date from" />
           <button class="btn btn-primary btn-sm" id="filter-apply">Filter</button>
           <button class="btn btn-outline btn-sm" id="filter-clear">Clear</button>
         </div>
@@ -193,7 +192,6 @@
           if (filters.search) params.set('search', filters.search);
           if (filters.status) params.set('status', filters.status);
           if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
-          if (filters.dateTo) params.set('dateTo', filters.dateTo);
         }
         params.set('page', page);
         params.set('limit', PAGE_SIZE);
@@ -413,7 +411,6 @@
         search: document.getElementById('filter-search').value.trim() || undefined,
         status: document.getElementById('filter-status').value || undefined,
         dateFrom: document.getElementById('filter-date-from').value || undefined,
-        dateTo: document.getElementById('filter-date-to').value || undefined,
       };
     }
 
@@ -422,7 +419,6 @@
       document.getElementById('filter-search').value = '';
       document.getElementById('filter-status').value = '';
       document.getElementById('filter-date-from').value = '';
-      document.getElementById('filter-date-to').value = '';
       currentPage = 1;
       refreshList();
     });

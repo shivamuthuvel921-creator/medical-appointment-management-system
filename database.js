@@ -11,6 +11,8 @@ if (config.dbPath !== ':memory:') {
   db.pragma('journal_mode = WAL');
 }
 
+db.pragma('foreign_keys = ON');
+
 // ─── Schema ──────────────────────────────────────────
 
 db.exec(`
@@ -304,8 +306,12 @@ export function updateAppointmentInDb(id, fields) {
 }
 
 export function deleteAppointmentById(id) {
-  const result = db.prepare('DELETE FROM appointments WHERE id = ?').run(id);
-  return result.changes > 0;
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM appointment_audit WHERE appointmentId = ?').run(id);
+    db.prepare('DELETE FROM attachments WHERE appointmentId = ?').run(id);
+    return db.prepare('DELETE FROM appointments WHERE id = ?').run(id).changes > 0;
+  });
+  return tx();
 }
 
 export function findConflictingAppointment({ doctorId, date, time, excludeId }) {
@@ -412,8 +418,11 @@ export function updateDoctor(id, doctor) {
 }
 
 export function deleteDoctorById(id) {
-  const result = db.prepare('DELETE FROM doctors WHERE id = ?').run(id);
-  return result.changes > 0;
+  const result = db.transaction(() => {
+    db.prepare('DELETE FROM doctor_slots WHERE doctorId = ?').run(id);
+    return db.prepare('DELETE FROM doctors WHERE id = ?').run(id).changes > 0;
+  })();
+  return result;
 }
 
 // ─── Doctor availability slots ────────────────────────

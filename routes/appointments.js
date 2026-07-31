@@ -12,7 +12,6 @@ import {
 } from '../database.js';
 import { createAppointment, sortAppointments } from '../scheduler.js';
 import { sendAppointmentCreatedEmail, sendAppointmentCancelledEmail } from '../services/notifications.js';
-import { config } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = join(__dirname, '..', 'uploads');
@@ -195,8 +194,8 @@ router.delete('/:id', async (req, res) => {
     return res.status(403).json({ error: 'Not authorized to delete this appointment' });
   }
 
-  deleteAppointmentById(req.params.id);
   logAudit({ appointmentId: existing.id, actorId: req.user.id, action: 'deleted', details: 'Appointment deleted' });
+  deleteAppointmentById(req.params.id);
   sendAppointmentCancelledEmail(req.user, existing);
   res.json({ message: 'Deleted' });
 });

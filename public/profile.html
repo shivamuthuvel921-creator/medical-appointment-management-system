@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 700px) { .profile-grid { grid-template-columns: 1fr; } }
+    .role-badge { display: inline-block; padding: 0.2rem 0.65rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 600; text-transform: capitalize; background: var(--primary-light); color: var(--primary); }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/profile.html" id="profile-link">Profile</a>
+      <a href="/login.html" id="login-link">Login</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>My Profile</h1>
+      <p>Manage your account details.</p>
+    </div>
+
+    <div class="profile-grid">
+      <div class="card">
+        <h2>Account Information</h2>
+        <div style="display:grid;gap:0.35rem;margin-bottom:1rem;font-size:0.9rem;">
+          <div><strong>Name:</strong> <span id="p-name">—</span></div>
+          <div><strong>Email:</strong> <span id="p-email">—</span></div>
+          <div><strong>Phone:</strong> <span id="p-phone">—</span></div>
+          <div><strong>Role:</strong> <span class="role-badge" id="p-role">—</span></div>
+        </div>
+        <form id="profile-form">
+          <input type="text" name="name" placeholder="Full name" required />
+          <input type="tel" name="phone" placeholder="Phone number" required />
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Change Password</h2>
+        <form id="password-form">
+          <input type="password" name="oldPassword" placeholder="Current password" required autocomplete="current-password" />
+          <input type="password" name="newPassword" placeholder="New password (min 8 chars)" required autocomplete="new-password" />
+          <button type="submit" class="btn btn-primary">Update Password</button>
+        </form>
+        <p style="margin-top:1rem;font-size:0.8rem;">
+          Forgot your password? <a href="/forgot-password.html" style="color:var(--primary);">Send a reset link</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { getUser, clearAuth, isLoggedIn, isAdmin, api, setupNav, esc, showToast } from './common.js';
+
+    if (!isLoggedIn()) window.location.href = '/login.html';
+
+    setupNav('/profile.html');
+
+    async function load() {
+      const res = await api('/api/auth/me');
+      if (!res.ok) return;
+      const u = await res.json();
+      document.getElementById('p-name').textContent = u.name;
+      document.getElementById('p-email').textContent = u.email;
+      document.getElementById('p-phone').textContent = u.phone;
+      document.getElementById('p-role').textContent = u.role;
+      document.querySelector('#profile-form input[name=name]').value = u.name;
+      document.querySelector('#profile-form input[name=phone]').value = u.phone;
+    }
+
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const res = await api('/api/auth/me', {
+        method: 'PUT',
+        body: JSON.stringify({ name: fd.get('name').toString().trim(), phone: fd.get('phone').toString().trim() }),
+      });
+      if (res.ok) { showToast('Profile updated'); load(); }
+      else { const err = await res.json(); showToast(err.error || 'Failed', 'error'); }
+    });
+
+    document.getElementById('password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const res = await api('/api/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ oldPassword: fd.get('oldPassword').toString(), newPassword: fd.get('newPassword').toString() }),
+      });
+      if (res.ok) { e.target.reset(); showToast('Password updated'); }
+      else { const err = await res.json(); showToast(err.error || 'Failed', 'error'); }
+    });
+
+    load();
+  </script>
+</body>
+</html>
