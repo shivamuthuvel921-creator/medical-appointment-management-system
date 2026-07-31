@@ -6,48 +6,26 @@
   <title>Book Visit — MedCare</title>
   <link rel="stylesheet" href="/styles.css" />
   <style>
-    .specialties-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
-    }
-    .specialty-item {
-      padding: 0.8rem;
-      background: var(--gray-50);
-      border: 1px solid var(--gray-200);
-      border-radius: var(--radius-sm);
-      font-size: 0.85rem;
-    }
+    .specialties-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+    .specialty-item { padding: 0.8rem; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 0.85rem; }
     .specialty-item strong { color: var(--primary); }
+    .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+    .filter-bar input, .filter-bar select { padding: 0.4rem 0.6rem; font-size: 0.8rem; min-width: 120px; flex: 1; }
+    .filter-bar .btn { flex: 0; }
     .appointment-cards { display: grid; gap: 0.75rem; }
-    .appt-card {
-      border: 1px solid var(--gray-200);
-      border-radius: var(--radius-sm);
-      padding: 1rem;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 0.5rem;
-      align-items: start;
-      transition: border-color var(--transition), box-shadow var(--transition);
-    }
-    .appt-card:hover {
-      border-color: var(--primary);
-      box-shadow: var(--shadow);
-    }
+    .appt-card { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 1rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: start; transition: border-color var(--transition), box-shadow var(--transition); }
+    .appt-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
     .appt-info { display: grid; gap: 0.25rem; }
-    .appt-info .name {
-      font-weight: 700;
-      color: var(--gray-800);
-    }
-    .appt-info .meta {
-      font-size: 0.8rem;
-      color: var(--gray-500);
-    }
+    .appt-info .name { font-weight: 700; color: var(--gray-800); }
+    .appt-info .meta { font-size: 0.8rem; color: var(--gray-500); }
     .appt-info .meta span { margin-right: 0.75rem; }
     .appt-actions { display: flex; gap: 0.4rem; align-items: center; }
+    .export-link { margin-left: auto; font-size: 0.8rem; color: var(--primary); text-decoration: none; font-weight: 600; }
     @media (max-width: 500px) {
       .appt-card { grid-template-columns: 1fr; }
       .appt-actions { justify-content: flex-end; }
+      .filter-bar { flex-direction: column; }
+      .filter-bar input, .filter-bar select { width: 100%; }
     }
     #appointments-section { scroll-margin-top: 5rem; }
   </style>
@@ -59,7 +37,11 @@
       <a href="/home.html">Home</a>
       <a href="/index.html">Book Visit</a>
       <a href="/doctor-details.html">Doctors</a>
-      <a href="/login.html">Login</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
+      <a href="/login.html" id="login-link">Login</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
     </div>
   </nav>
 
@@ -83,9 +65,11 @@
       <div class="card" id="booking">
         <h2>Book an Appointment</h2>
         <form id="appointment-form" novalidate>
-          <input name="patientName" placeholder="Patient name" required />
+          <input name="patientName" id="patient-name" placeholder="Patient name" required />
           <input name="medication" placeholder="Medication" required />
-          <input name="doctorName" placeholder="Doctor name" required />
+          <select name="doctorName" id="doctor-select" required>
+            <option value="">Select a doctor...</option>
+          </select>
           <input type="date" name="appointmentDate" required />
           <input type="time" name="appointmentTime" required />
           <textarea name="notes" placeholder="Notes (optional)"></textarea>
@@ -101,8 +85,25 @@
 
     <section id="appointments-section" style="margin-top: 1.5rem;">
       <div class="card">
-        <h2>Appointments</h2>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <h2>Appointments</h2>
+          <a class="export-link" href="/api/appointments/export">Export CSV</a>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="filter-search" placeholder="Search patient, doctor..." />
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <input type="date" id="filter-date-from" />
+          <input type="date" id="filter-date-to" />
+          <button class="btn btn-primary btn-sm" id="filter-apply">Filter</button>
+          <button class="btn btn-outline btn-sm" id="filter-clear">Clear</button>
+        </div>
         <div id="appointment-list"></div>
+        <div id="pagination"></div>
       </div>
     </section>
   </div>
@@ -112,7 +113,7 @@
   <div class="modal-overlay" id="confirm-modal">
     <div class="modal">
       <h3>Cancel Appointment</h3>
-      <p>Are you sure you want to cancel this appointment? This action cannot be undone.</p>
+      <p>Are you sure you want to cancel this appointment?</p>
       <div class="modal-actions">
         <button class="btn btn-outline btn-sm" id="modal-cancel">Keep</button>
         <button class="btn btn-danger btn-sm" id="modal-confirm">Yes, Cancel</button>
@@ -120,35 +121,98 @@
     </div>
   </div>
 
-  <script>
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal" style="max-width:460px;">
+      <h3>Edit Appointment</h3>
+      <form id="edit-form">
+        <input name="patientName" id="edit-patientName" placeholder="Patient name" required />
+        <input name="medication" id="edit-medication" placeholder="Medication" required />
+        <select name="doctorName" id="edit-doctorName" required></select>
+        <input type="date" name="appointmentDate" id="edit-appointmentDate" required />
+        <input type="time" name="appointmentTime" id="edit-appointmentTime" required />
+        <textarea name="notes" id="edit-notes" placeholder="Notes (optional)"></textarea>
+        <select name="status" id="edit-status">
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <div id="edit-attachments"></div>
+        <input type="file" id="edit-file" style="font-size:0.8rem;" />
+        <div class="modal-actions" style="margin-top:0.5rem;">
+          <button type="button" class="btn btn-outline btn-sm" id="edit-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="edit-save">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getToken, getUser, clearAuth, isLoggedIn, isAdmin, api, setupNav, esc, showToast, emptyState, paginationHtml, bindPagination } from './common.js';
+
     const form = document.getElementById('appointment-form');
     const list = document.getElementById('appointment-list');
     const submitBtn = document.getElementById('submit-btn');
-    const toast = document.getElementById('toast');
+    const paginationEl = document.getElementById('pagination');
     const modal = document.getElementById('confirm-modal');
-    let deleteTarget = null;
+    const editModal = document.getElementById('edit-modal');
+    const editForm = document.getElementById('edit-form');
+    const doctorSelect = document.getElementById('doctor-select');
+    const editDoctorSelect = document.getElementById('edit-doctorName');
 
-    function showToast(msg, type) {
-      toast.textContent = msg;
-      toast.className = 'toast toast-' + type + ' show';
-      setTimeout(() => toast.classList.remove('show'), 3000);
+    let deleteTarget = null;
+    let editTarget = null;
+    let currentPage = 1;
+    const PAGE_SIZE = 10;
+
+    setupNav('/index.html');
+
+    if (isLoggedIn()) {
+      const user = getUser();
+      if (user && user.name) document.getElementById('patient-name').value = user.name;
+      loadDoctors();
+    } else {
+      document.getElementById('booking').innerHTML = '<h2>Book an Appointment</h2><p style="color:var(--gray-400);"><a href="/login.html">Sign in</a> to book appointments.</p>';
+      document.getElementById('appointments-section').innerHTML = '';
     }
 
-    async function loadAppointments() {
+    async function loadDoctors() {
+      try {
+        const res = await fetch('/api/doctors');
+        const doctors = await res.json();
+        const opts = doctors.map(d => `<option value="${d.id}">${esc(d.name)} — ${esc(d.specialty)}</option>`).join('');
+        doctorSelect.innerHTML = '<option value="">Select a doctor...</option>' + opts;
+        editDoctorSelect.innerHTML = '<option value="">Select a doctor...</option>' + opts;
+      } catch {}
+    }
+
+    async function loadAppointments(filters, page) {
       list.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading appointments...</div>';
       try {
-        const res = await fetch('/api/appointments');
-        if (!res.ok) throw new Error('Failed to load');
+        const params = new URLSearchParams();
+        if (filters) {
+          if (filters.search) params.set('search', filters.search);
+          if (filters.status) params.set('status', filters.status);
+          if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+          if (filters.dateTo) params.set('dateTo', filters.dateTo);
+        }
+        params.set('page', page);
+        params.set('limit', PAGE_SIZE);
+        const qs = params.toString();
+        const res = await api('/api/appointments' + (qs ? '?' + qs : ''));
+        if (!res.ok) throw new Error('Failed');
         return await res.json();
       } catch {
-        list.innerHTML = '<div class="empty-state"><strong>Could not load appointments</strong><p>Check that the server is running.</p></div>';
+        list.innerHTML = emptyState('Could not load appointments', 'Sign in to see your appointments.');
         return null;
       }
     }
 
-    function renderAppointments(appointments) {
+    function renderAppointments(data) {
+      if (!data) return;
+      const appointments = data.data || data;
       if (!appointments || appointments.length === 0) {
-        list.innerHTML = '<div class="empty-state"><strong>No appointments yet</strong><p>Book your first appointment above.</p></div>';
+        list.innerHTML = emptyState('No appointments', 'Book your first appointment above.');
+        paginationEl.innerHTML = '';
         return;
       }
 
@@ -164,31 +228,93 @@
               <div class="meta">
                 <span class="status-badge status-${a.status}">${a.status}</span>
                 ${a.notes ? '<span>Notes: ' + esc(a.notes) + '</span>' : ''}
+                ${a.attachments && a.attachments.length ? `<span>${a.attachments.length} file(s)</span>` : ''}
               </div>
             </div>
             <div class="appt-actions">
-              <button class="btn btn-danger btn-sm" data-id="${a.id}">Cancel</button>
+              <button class="btn btn-outline btn-sm edit-btn" data-id="${a.id}">Edit</button>
+              <button class="btn btn-danger btn-sm cancel-btn" data-id="${a.id}">Cancel</button>
             </div>
           </div>
         `).join('') + '</div>';
 
-      document.querySelectorAll('[data-id]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          deleteTarget = btn.dataset.id;
-          modal.classList.add('open');
-        });
-      });
+      list.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => openEditModal(btn.dataset.id)));
+      list.querySelectorAll('.cancel-btn').forEach(btn => btn.addEventListener('click', () => {
+        deleteTarget = btn.dataset.id;
+        modal.classList.add('open');
+      }));
+
+      paginationEl.innerHTML = paginationHtml(data, goToPage);
+      bindPagination(paginationEl, goToPage);
     }
 
-    function esc(s) {
-      const d = document.createElement('div');
-      d.textContent = s;
-      return d.innerHTML;
+    function goToPage(page) {
+      currentPage = page;
+      refreshList();
+      window.scrollTo({ top: document.getElementById('appointments-section').offsetTop - 70, behavior: 'smooth' });
     }
+
+    async function openEditModal(id) {
+      try {
+        const res = await api('/api/appointments/' + id);
+        if (!res.ok) { showToast('Could not load appointment', 'error'); return; }
+        const a = await res.json();
+        editTarget = id;
+        document.getElementById('edit-patientName').value = a.patientName;
+        document.getElementById('edit-medication').value = a.medication;
+        document.getElementById('edit-doctorName').value = a.doctorId || '';
+        document.getElementById('edit-appointmentDate').value = a.appointmentDate;
+        document.getElementById('edit-appointmentTime').value = a.appointmentTime;
+        document.getElementById('edit-notes').value = a.notes || '';
+        document.getElementById('edit-status').value = a.status;
+        renderAttachments(a.attachments || []);
+        editModal.classList.add('open');
+      } catch {
+        showToast('Network error', 'error');
+      }
+    }
+
+    function renderAttachments(attachments) {
+      const el = document.getElementById('edit-attachments');
+      if (!attachments.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div style="font-size:0.75rem;color:var(--gray-400);margin-bottom:0.3rem;">Attachments</div>' +
+        attachments.map(at => `
+          <span class="attachment-chip">
+            <a href="/api/appointments/${editTarget}/attachments/${at.id}" target="_blank">${esc(at.fileName)}</a>
+            <button class="del" data-attach="${at.id}" title="Remove">&times;</button>
+          </span>`).join('');
+      el.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async () => {
+        const r = await api(`/api/appointments/${editTarget}/attachments/${btn.dataset.attach}`, { method: 'DELETE' });
+        if (r.ok) { showToast('Attachment removed'); renderAttachments(attachments.filter(x => x.id !== btn.dataset.attach)); }
+        else showToast('Failed to remove', 'error');
+      }));
+    }
+
+    document.getElementById('edit-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file || !editTarget) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await api(`/api/appointments/${editTarget}/attachments`, { method: 'POST', body: fd });
+      if (r.ok) {
+        showToast('File uploaded');
+        e.target.value = '';
+        const res = await api('/api/appointments/' + editTarget);
+        const a = await res.json();
+        renderAttachments(a.attachments || []);
+      } else {
+        const err = await r.json();
+        showToast(err.error || 'Upload failed', 'error');
+      }
+    });
 
     async function refreshList() {
-      const data = await loadAppointments();
-      if (data !== null) renderAppointments(data);
+      const data = await loadAppointments(getFilters(), currentPage);
+      renderAppointments(data);
+    }
+
+    function doctorIdOf(select) {
+      return select.options[select.selectedIndex]?.value || '';
     }
 
     form.addEventListener('submit', async (e) => {
@@ -200,7 +326,8 @@
       const payload = {
         patientName: fd.get('patientName').toString().trim(),
         medication: fd.get('medication').toString().trim(),
-        doctorName: fd.get('doctorName').toString().trim(),
+        doctorName: doctorSelect.options[doctorSelect.selectedIndex].text.replace(/\s—.*$/, ''),
+        doctorId: doctorIdOf(doctorSelect),
         appointmentDate: fd.get('appointmentDate').toString().trim(),
         appointmentTime: fd.get('appointmentTime').toString().trim(),
         notes: fd.get('notes').toString().trim(),
@@ -208,12 +335,7 @@
       };
 
       try {
-        const res = await fetch('/api/appointments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
+        const res = await api('/api/appointments', { method: 'POST', body: JSON.stringify(payload) });
         if (!res.ok) {
           const err = await res.json();
           showToast(err.error || 'Failed to save', 'error');
@@ -221,47 +343,94 @@
           submitBtn.textContent = 'Save Appointment';
           return;
         }
-
         form.reset();
+        const user = getUser();
+        if (user && user.name) document.getElementById('patient-name').value = user.name;
         showToast('Appointment booked successfully', 'success');
+        currentPage = 1;
         await refreshList();
       } catch {
-        showToast('Network error — could not save', 'error');
+        showToast('Network error', 'error');
       }
 
       submitBtn.disabled = false;
       submitBtn.textContent = 'Save Appointment';
     });
 
-    document.getElementById('modal-cancel').addEventListener('click', () => {
-      modal.classList.remove('open');
-      deleteTarget = null;
-    });
-
-    document.getElementById('modal-confirm').addEventListener('click', async () => {
-      if (!deleteTarget) return;
-      modal.classList.remove('open');
+    editForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!editTarget) return;
+      const fd = new FormData(editForm);
+      const payload = {
+        patientName: fd.get('patientName').toString().trim(),
+        medication: fd.get('medication').toString().trim(),
+        doctorName: editDoctorSelect.options[editDoctorSelect.selectedIndex].text.replace(/\s—.*$/, ''),
+        doctorId: doctorIdOf(editDoctorSelect),
+        appointmentDate: fd.get('appointmentDate').toString().trim(),
+        appointmentTime: fd.get('appointmentTime').toString().trim(),
+        notes: fd.get('notes').toString().trim(),
+        status: fd.get('status').toString().trim(),
+      };
 
       try {
-        const res = await fetch('/api/appointments/' + deleteTarget, { method: 'DELETE' });
+        const res = await api('/api/appointments/' + editTarget, { method: 'PUT', body: JSON.stringify(payload) });
         if (!res.ok) {
-          showToast('Could not cancel appointment', 'error');
-        } else {
-          showToast('Appointment cancelled', 'success');
+          const err = await res.json();
+          showToast(err.error || 'Failed to update', 'error');
+          return;
         }
+        editModal.classList.remove('open');
+        editTarget = null;
+        showToast('Appointment updated', 'success');
         await refreshList();
       } catch {
         showToast('Network error', 'error');
       }
+    });
 
+    document.getElementById('edit-cancel').addEventListener('click', () => {
+      editModal.classList.remove('open');
+      editTarget = null;
+    });
+    document.getElementById('modal-cancel').addEventListener('click', () => {
+      modal.classList.remove('open');
+      deleteTarget = null;
+    });
+    document.getElementById('modal-confirm').addEventListener('click', async () => {
+      if (!deleteTarget) return;
+      modal.classList.remove('open');
+      try {
+        const res = await api('/api/appointments/' + deleteTarget, { method: 'DELETE' });
+        if (!res.ok) showToast('Could not cancel', 'error');
+        else showToast('Appointment cancelled', 'success');
+        await refreshList();
+      } catch { showToast('Network error', 'error'); }
       deleteTarget = null;
     });
 
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) { modal.classList.remove('open'); deleteTarget = null; }
+    function getFilters() {
+      return {
+        search: document.getElementById('filter-search').value.trim() || undefined,
+        status: document.getElementById('filter-status').value || undefined,
+        dateFrom: document.getElementById('filter-date-from').value || undefined,
+        dateTo: document.getElementById('filter-date-to').value || undefined,
+      };
+    }
+
+    document.getElementById('filter-apply').addEventListener('click', () => { currentPage = 1; refreshList(); });
+    document.getElementById('filter-clear').addEventListener('click', () => {
+      document.getElementById('filter-search').value = '';
+      document.getElementById('filter-status').value = '';
+      document.getElementById('filter-date-from').value = '';
+      document.getElementById('filter-date-to').value = '';
+      currentPage = 1;
+      refreshList();
     });
 
-    refreshList();
+    modal.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.remove('open'); deleteTarget = null; } });
+    editModal.addEventListener('click', (e) => { if (e.target === editModal) { editModal.classList.remove('open'); editTarget = null; } });
+
+    if (isLoggedIn()) refreshList();
   </script>
 </body>
 </html>

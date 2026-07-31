@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .admin-table th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--gray-200); color: var(--gray-500); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em; }
+    .admin-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--gray-100); }
+    .admin-table tr:hover td { background: var(--gray-50); }
+    .admin-table .actions { display: flex; gap: 0.3rem; }
+    .doctor-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .doctor-form-grid .full { grid-column: 1 / -1; }
+    @media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } }
+    .active-users { margin-top: 1.5rem; }
+    .active-users table { font-size: 0.8rem; }
+    .admin-toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/profile.html" id="profile-link">Profile</a>
+      <a href="#" id="logout-link">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Admin Panel</h1>
+      <p>Manage doctors, users, and view all patient appointments.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h2>Overview</h2>
+      <div class="stats-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;">
+        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
+          <div class="num" style="font-size:1.8rem;font-weight:800;color:var(--primary);" id="admin-total">—</div>
+          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Total Appointments</div>
+        </div>
+        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
+          <div class="num" style="font-size:1.8rem;font-weight:800;color:#1d4ed8;" id="admin-today">—</div>
+          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Today</div>
+        </div>
+        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
+          <div class="num" style="font-size:1.8rem;font-weight:800;color:#15803d;" id="admin-completed">—</div>
+          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Completed</div>
+        </div>
+        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
+          <div class="num" style="font-size:1.8rem;font-weight:800;color:var(--danger);" id="admin-cancelled">—</div>
+          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Cancelled</div>
+        </div>
+      </div>
+      <div class="chart-wrap" style="margin-top:1rem;">
+        <div class="chart-box"><h3>By Specialty</h3><div id="chart-specialty"></div></div>
+        <div class="chart-box"><h3>By Doctor</h3><div id="chart-doctor"></div></div>
+      </div>
+    </div>
+
+    <div class="admin-grid">
+      <div class="card">
+        <h2>All Appointments</h2>
+        <div class="admin-toolbar">
+          <input type="text" id="admin-search" placeholder="Search patient, doctor..." style="flex:1;min-width:140px;" />
+          <select id="admin-status">
+            <option value="">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button class="btn btn-primary btn-sm" id="admin-filter">Filter</button>
+          <a class="btn btn-outline btn-sm" href="/api/appointments/export">Export CSV</a>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="admin-table">
+            <thead><tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody id="admin-appointments-body"></tbody>
+          </table>
+        </div>
+        <div id="admin-pagination" style="display:flex;justify-content:center;gap:0.5rem;margin-top:0.75rem;"></div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:1.5rem;">
+          <h2>Manage Doctors</h2>
+          <div style="overflow-x:auto;margin-bottom:1rem;">
+            <table class="admin-table">
+              <thead><tr><th>Name</th><th>Specialty</th><th>Action</th></tr></thead>
+              <tbody id="admin-doctors-body"></tbody>
+            </table>
+          </div>
+          <h3 style="font-size:0.9rem;margin-bottom:0.75rem;">Add New Doctor</h3>
+          <form id="admin-add-doctor" class="doctor-form-grid">
+            <input name="name" placeholder="Name" required />
+            <input name="specialty" placeholder="Specialty" required />
+            <input name="experience" placeholder="Experience" class="full" />
+            <input name="clinic" placeholder="Clinic" class="full" />
+            <input name="phone" placeholder="Phone" class="full" />
+            <input name="email" placeholder="Email" class="full" />
+            <button type="submit" class="btn btn-primary btn-sm full">Add Doctor</button>
+          </form>
+        </div>
+
+        <div class="card active-users">
+          <h2>Users</h2>
+          <div style="overflow-x:auto;">
+            <table class="admin-table">
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Action</th></tr></thead>
+              <tbody id="admin-users-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { isAdmin, api, setupNav, esc, showToast, emptyState, renderBarChart, renderLineChart } from './common.js';
+
+    if (!isAdmin()) window.location.href = '/home.html';
+
+    let page = 1;
+    const PAGE_SIZE = 10;
+
+    setupNav('/admin.html');
+
+    async function loadStats() {
+      const res = await api('/api/stats');
+      if (!res.ok) return;
+      const s = await res.json();
+      document.getElementById('admin-total').textContent = s.total || 0;
+      document.getElementById('admin-today').textContent = s.upcomingToday || 0;
+      document.getElementById('admin-completed').textContent = s.completed || 0;
+      document.getElementById('admin-cancelled').textContent = s.cancelled || 0;
+      renderBarChart(document.getElementById('chart-specialty'), s.bySpecialty, { color: '#0f6b3b' });
+      renderBarChart(document.getElementById('chart-doctor'), s.byDoctor, { color: '#1d4ed8' });
+    }
+
+    async function loadAllAppointments() {
+      const params = new URLSearchParams();
+      const search = document.getElementById('admin-search').value.trim();
+      const status = document.getElementById('admin-status').value;
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      params.set('page', page);
+      params.set('limit', PAGE_SIZE);
+      const res = await api('/api/appointments?' + params.toString());
+      if (!res.ok) return;
+      const data = await res.json();
+      const apps = data.data;
+      document.getElementById('admin-appointments-body').innerHTML = apps.map(a => `
+        <tr>
+          <td>${esc(a.patientName)}</td>
+          <td>Dr. ${esc(a.doctorName)}</td>
+          <td>${a.appointmentDate} ${a.appointmentTime}</td>
+          <td><span class="status-badge status-${a.status}">${a.status}</span></td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:1rem;">No appointments</td></tr>';
+
+      const pag = document.getElementById('admin-pagination');
+      pag.innerHTML = '';
+      if (data.totalPages > 1) {
+        const prev = document.createElement('button');
+        prev.className = 'btn btn-outline btn-sm';
+        prev.textContent = 'Prev';
+        prev.disabled = page <= 1;
+        prev.onclick = () => { page--; loadAllAppointments(); };
+        const info = document.createElement('span');
+        info.className = 'page-info';
+        info.textContent = `Page ${page} of ${data.totalPages}`;
+        const next = document.createElement('button');
+        next.className = 'btn btn-outline btn-sm';
+        next.textContent = 'Next';
+        next.disabled = page >= data.totalPages;
+        next.onclick = () => { page++; loadAllAppointments(); };
+        pag.append(prev, info, next);
+      }
+    }
+
+    async function loadDoctors() {
+      const res = await fetch('/api/doctors');
+      const doctors = await res.json();
+      document.getElementById('admin-doctors-body').innerHTML = doctors.map(d => `
+        <tr>
+          <td>${esc(d.name)}</td>
+          <td>${esc(d.specialty)}</td>
+          <td><button class="btn btn-danger btn-sm delete-doc" data-id="${d.id}">Delete</button></td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:1rem;">No doctors</td></tr>';
+
+      document.querySelectorAll('.delete-doc').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Remove this doctor?')) return;
+          const r = await api('/api/doctors/' + btn.dataset.id, { method: 'DELETE' });
+          if (r.ok) { showToast('Doctor removed'); loadDoctors(); }
+          else showToast('Failed', 'error');
+        });
+      });
+    }
+
+    async function loadUsers() {
+      const res = await api('/api/users');
+      if (!res.ok) return;
+      const users = await res.json();
+      document.getElementById('admin-users-body').innerHTML = users.map(u => `
+        <tr>
+          <td>${esc(u.name)}</td>
+          <td>${esc(u.email)}</td>
+          <td><span class="status-badge status-${u.role}">${esc(u.role)}</span></td>
+          <td>
+            ${u.role !== 'admin' ? `<button class="btn btn-outline btn-sm promote" data-id="${u.id}">Make Admin</button>` : ''}
+            ${u.role === 'patient' ? `<button class="btn btn-outline btn-sm make-doctor" data-id="${u.id}" style="margin-left:0.25rem;">Make Doctor</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('.promote').forEach(btn => btn.addEventListener('click', async () => {
+        const r = await api('/api/users/' + btn.dataset.id + '/role', { method: 'PUT', body: JSON.stringify({ role: 'admin' }) });
+        if (r.ok) { showToast('User promoted to admin'); loadUsers(); } else showToast('Failed', 'error');
+      }));
+      document.querySelectorAll('.make-doctor').forEach(btn => btn.addEventListener('click', async () => {
+        const r = await api('/api/users/' + btn.dataset.id + '/role', { method: 'PUT', body: JSON.stringify({ role: 'doctor' }) });
+        if (r.ok) { showToast('User set as doctor'); loadUsers(); } else showToast('Failed', 'error');
+      }));
+    }
+
+    document.getElementById('admin-filter').addEventListener('click', () => { page = 1; loadAllAppointments(); });
+
+    document.getElementById('admin-add-doctor').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        name: fd.get('name').toString().trim(),
+        specialty: fd.get('specialty').toString().trim(),
+        experience: fd.get('experience').toString().trim(),
+        clinic: fd.get('clinic').toString().trim(),
+        phone: fd.get('phone').toString().trim(),
+        email: fd.get('email').toString().trim(),
+      };
+      const r = await api('/api/doctors', { method: 'POST', body: JSON.stringify(payload) });
+      if (r.ok) { e.target.reset(); showToast('Doctor added'); loadDoctors(); }
+      else { const err = await r.json(); showToast(err.error || 'Failed', 'error'); }
+    });
+
+    loadStats();
+    loadAllAppointments();
+    loadDoctors();
+    loadUsers();
+  </script>
+</body>
+</html>

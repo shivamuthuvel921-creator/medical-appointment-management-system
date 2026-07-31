@@ -4,6 +4,8 @@ export function createAppointment(input) {
 
   return {
     id: crypto.randomUUID(),
+    userId: input.userId || null,
+    doctorId: input.doctorId || null,
     patientName: input.patientName?.trim() || 'Unknown patient',
     medication: input.medication?.trim() || 'Unknown medication',
     doctorName: input.doctorName?.trim() || 'Unassigned doctor',
