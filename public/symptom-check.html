@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Symptom Pre-Check — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .check-box { max-width:720px; margin: 1.2rem auto; background: white; padding:1rem; border-radius:8px; box-shadow:var(--shadow); }
+    .results { margin-top:0.8rem; }
+    .badge { display:inline-block; padding:0.35rem 0.6rem; background:#eef2ff; border-radius:999px; margin-right:0.4rem; font-weight:600; color:#3730a3; }
+    .disclaimer { font-size:0.85rem; color:#6b7280; margin-top:0.6rem; }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/index.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/symptom-check.html">Symptom Check</a>
+      <a href="/login.html" id="login-link">Login</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Symptom Pre-Check</h1>
+      <p>Enter your symptoms below for basic guidance on which department/specialist to consider.</p>
+    </div>
+
+    <div class="check-box">
+      <form id="symptom-form">
+        <label for="symptoms">Describe your symptoms</label>
+        <textarea id="symptoms" rows="6" style="width:100%;margin-top:0.5rem" placeholder="e.g. persistent cough and shortness of breath"></textarea>
+        <div style="margin-top:0.6rem">
+          <button class="btn btn-primary" type="submit">Get Guidance</button>
+          <button class="btn btn-outline" type="button" id="clear-btn">Clear</button>
+        </div>
+      </form>
+
+      <div class="results" id="results" style="display:none">
+        <h3>Suggested Departments</h3>
+        <div id="suggestions"></div>
+        <div class="disclaimer" id="disclaimer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, setupNav, esc, showToast } from './common.js';
+    setupNav('/symptom-check.html');
+
+    const form = document.getElementById('symptom-form');
+    const txt = document.getElementById('symptoms');
+    const results = document.getElementById('results');
+    const suggestionsEl = document.getElementById('suggestions');
+    const disclaimerEl = document.getElementById('disclaimer');
+    const clearBtn = document.getElementById('clear-btn');
+
+    clearBtn.addEventListener('click', () => {
+      txt.value = '';
+      results.style.display = 'none';
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const val = txt.value.trim();
+      if (!val) return showToast('Please enter your symptoms', 'error');
+      try {
+        const res = await api('/api/symptoms', { method: 'POST', body: JSON.stringify({ symptoms: val }) });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          return showToast(err.error || 'Unable to get guidance', 'error');
+        }
+        const data = await res.json();
+        suggestionsEl.innerHTML = data.suggestions.map(s => `<span class="badge">${esc(s)}</span>`).join(' ');
+        disclaimerEl.textContent = data.disclaimer || '';
+        results.style.display = 'block';
+      } catch (err) {
+        showToast('Network error', 'error');
+      }
+    });
+  </script>
+</body>
+</html>

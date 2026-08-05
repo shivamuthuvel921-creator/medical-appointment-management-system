@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js';
 import doctorRoutes from './routes/doctors.js';
 import appointmentRoutes from './routes/appointments.js';
 import userRoutes from './routes/users.js';
+import symptomRoutes from './routes/symptoms.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -43,6 +44,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/symptoms', symptomRoutes);
 
 app.get('/api/stats', authenticate, (req, res) => {
   const stats = getAppointmentStats(req.user, req.query.doctorId);
