@@ -3,31 +3,139 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Book Visit — MedCare</title>
+  <title>Book Appointment — MedCare</title>
   <link rel="stylesheet" href="/styles.css" />
   <style>
-    .specialties-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
-    .specialty-item { padding: 0.8rem; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 0.85rem; }
-    .specialty-item strong { color: var(--primary); }
-    .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
-    .filter-bar input, .filter-bar select { padding: 0.4rem 0.6rem; font-size: 0.8rem; min-width: 120px; flex: 1; }
-    .filter-bar .btn { flex: 0; }
-    .appointment-cards { display: grid; gap: 0.75rem; }
-    .appt-card { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 1rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: start; transition: border-color var(--transition), box-shadow var(--transition); }
-    .appt-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
-    .appt-info { display: grid; gap: 0.25rem; }
-    .appt-info .name { font-weight: 700; color: var(--gray-800); }
-    .appt-info .meta { font-size: 0.8rem; color: var(--gray-500); }
-    .appt-info .meta span { margin-right: 0.75rem; }
+    .hero-card {
+      background: linear-gradient(135deg, var(--primary-light), #e8f6ee);
+      border-radius: var(--radius);
+      padding: 1.2rem;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(15, 107, 59, 0.14);
+    }
+    .hero-card h1 {
+      margin: 0.2rem 0 0.35rem;
+      color: var(--primary);
+      font-size: 1.6rem;
+    }
+    .hero-card p {
+      margin: 0;
+      color: var(--gray-500);
+      line-height: 1.6;
+    }
+    .symptom-card {
+      background: white;
+      border-radius: var(--radius);
+      padding: 1.1rem 1.2rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--gray-100);
+    }
+    .symptom-card h2 {
+      margin-bottom: 0.3rem;
+      font-size: 1.05rem;
+      color: var(--gray-800);
+    }
+    .symptom-card p {
+      color: var(--gray-500);
+      font-size: 0.9rem;
+      margin-bottom: 0.7rem;
+    }
+    .symptom-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.4rem;
+    }
+    .symptom-results {
+      margin-top: 0.75rem;
+      display: none;
+      border: 1px solid var(--gray-100);
+      background: var(--primary-bg);
+      border-radius: var(--radius-sm);
+      padding: 0.8rem;
+    }
+    .symptom-chip {
+      display: inline-block;
+      margin: 0.2rem 0.25rem 0.2rem 0;
+      padding: 0.3rem 0.65rem;
+      background: #e0f2fe;
+      color: #075985;
+      border-radius: var(--radius-full);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .symptom-note {
+      margin-top: 0.45rem;
+      font-size: 0.82rem;
+      color: var(--gray-600);
+    }
+    .feature-list {
+      display: grid;
+      gap: 0.6rem;
+      margin-top: 0.8rem;
+      color: var(--gray-600);
+    }
+    .feature-list li {
+      list-style: none;
+      padding-left: 1rem;
+      position: relative;
+    }
+    .feature-list li::before {
+      content: "✓";
+      color: var(--primary);
+      position: absolute;
+      left: 0;
+      font-weight: 700;
+    }
+    .filter-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    .filter-bar input,
+    .filter-bar select {
+      padding: 0.45rem 0.6rem;
+      font-size: 0.85rem;
+      min-width: 140px;
+      flex: 1;
+    }
+    .appointment-cards {
+      display: grid;
+      gap: 0.75rem;
+    }
+    .appt-card {
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.75rem;
+      align-items: start;
+      background: #fff;
+    }
+    .appt-info {
+      display: grid;
+      gap: 0.25rem;
+    }
+    .appt-info .name {
+      font-weight: 700;
+      color: var(--gray-800);
+    }
+    .appt-info .meta {
+      font-size: 0.8rem;
+      color: var(--gray-500);
+    }
     .appt-actions { display: flex; gap: 0.4rem; align-items: center; }
     .export-link { margin-left: auto; font-size: 0.8rem; color: var(--primary); text-decoration: none; font-weight: 600; }
-    @media (max-width: 500px) {
+    @media (max-width: 700px) {
       .appt-card { grid-template-columns: 1fr; }
       .appt-actions { justify-content: flex-end; }
       .filter-bar { flex-direction: column; }
       .filter-bar input, .filter-bar select { width: 100%; }
     }
-    #appointments-section { scroll-margin-top: 5rem; }
   </style>
 </head>
 <body>
@@ -46,23 +154,30 @@
   </nav>
 
   <div class="container">
-    <div class="page-header">
-      <h1>Medication Appointment Portal</h1>
-      <p>Book safe and timely medication consultations with trusted doctors.</p>
+    <div class="hero-card">
+      <span class="welcome-badge">Online booking</span>
+      <h1>Reserve your appointment in minutes</h1>
+      <p>Choose a trusted doctor, select a date and time, and keep your medication visits organized from one simple page.</p>
+      <ul class="feature-list">
+        <li>Fast scheduling for medication follow-ups and consultations</li>
+        <li>Real-time doctor availability and appointment history</li>
+        <li>Easy editing or cancellation whenever you need to change plans</li>
+      </ul>
+    </div>
+
+    <div class="symptom-card">
+      <h2>Start with your symptoms</h2>
+      <p>Tell us what you are experiencing and we’ll suggest the right specialist before you book.</p>
+      <textarea id="symptom-input" placeholder="e.g. I have a persistent cough and shortness of breath"></textarea>
+      <div class="symptom-actions">
+        <button type="button" class="btn btn-primary" id="symptom-submit">Get specialist suggestions</button>
+        <button type="button" class="btn btn-outline" id="symptom-clear">Clear</button>
+      </div>
+      <div id="symptom-results" class="symptom-results"></div>
     </div>
 
     <div class="grid-2">
       <div class="card">
-        <h2>Clinic Specialties</h2>
-        <div class="specialties-grid">
-          <div class="specialty-item"><strong>General Medicine</strong><br />Routine care &amp; prescriptions</div>
-          <div class="specialty-item"><strong>Cardiology</strong><br />Heart health follow-ups</div>
-          <div class="specialty-item"><strong>Diabetes Care</strong><br />Medication review &amp; monitoring</div>
-          <div class="specialty-item"><strong>Wellness</strong><br />Preventive healthcare visits</div>
-        </div>
-      </div>
-
-      <div class="card" id="booking">
         <h2>Book an Appointment</h2>
         <form id="appointment-form" novalidate>
           <input name="patientName" id="patient-name" placeholder="Patient name" required />
@@ -80,23 +195,29 @@
           <button type="submit" class="btn btn-primary" id="submit-btn">Save Appointment</button>
         </form>
       </div>
+
+      <div class="card">
+        <h2>Need help?</h2>
+        <p style="color:var(--gray-500); line-height:1.7;">If you are booking for the first time, sign in and use your profile details to pre-fill the patient name. You can also edit an appointment later if your schedule changes.</p>
+        <a class="btn btn-outline" href="/doctor-details.html">View Doctors</a>
+      </div>
     </div>
 
-    <section id="appointments-section" style="margin-top: 1.5rem;">
+    <section id="appointments-section" style="margin-top:1.5rem;">
       <div class="card">
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-          <h2>Appointments</h2>
+          <h2>Your Appointments</h2>
           <a class="export-link" href="/api/appointments/export">Export CSV</a>
         </div>
         <div class="filter-bar">
-          <input type="text" id="filter-search" placeholder="Search patient, doctor..." />
+          <input type="text" id="filter-search" placeholder="Search patient or doctor" />
           <select id="filter-status">
             <option value="">All statuses</option>
             <option value="scheduled">Scheduled</option>
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <input type="date" id="filter-date-from" placeholder="Date from" />
+          <input type="date" id="filter-date-from" />
           <button class="btn btn-primary btn-sm" id="filter-apply">Filter</button>
           <button class="btn btn-outline btn-sm" id="filter-clear">Clear</button>
         </div>
@@ -144,7 +265,7 @@
   </div>
 
   <script type="module">
-    import { getToken, getUser, clearAuth, isLoggedIn, isAdmin, api, setupNav, esc, showToast, emptyState, paginationHtml, bindPagination } from './common.js';
+    import { getUser, isLoggedIn, api, setupNav, esc, showToast, emptyState, paginationHtml, bindPagination } from './common.js';
 
     const form = document.getElementById('appointment-form');
     const list = document.getElementById('appointment-list');
@@ -155,32 +276,108 @@
     const editForm = document.getElementById('edit-form');
     const doctorSelect = document.getElementById('doctor-select');
     const editDoctorSelect = document.getElementById('edit-doctorName');
+    const symptomInput = document.getElementById('symptom-input');
+    const symptomSubmit = document.getElementById('symptom-submit');
+    const symptomClear = document.getElementById('symptom-clear');
+    const symptomResults = document.getElementById('symptom-results');
 
     let deleteTarget = null;
+    let symptomSuggestions = [];
     let editTarget = null;
     let currentPage = 1;
-    const PAGE_SIZE = 10;
+    const PAGE_SIZE = 8;
 
-    setupNav('/index.html');
+    setupNav('/booking.html');
 
     if (isLoggedIn()) {
       const user = getUser();
       if (user && user.name) document.getElementById('patient-name').value = user.name;
       loadDoctors();
+      refreshList();
     } else {
-      document.getElementById('booking').innerHTML = '<h2>Book an Appointment</h2><p style="color:var(--gray-400);"><a href="/login.html">Sign in</a> to book appointments.</p>';
-      document.getElementById('appointments-section').innerHTML = '';
+      document.getElementById('appointments-section').innerHTML = '<div class="card"><h2>Sign in to continue</h2><p style="color:var(--gray-500);">Please log in to book appointments and view your schedule.</p><a class="btn btn-primary" href="/login.html">Go to login</a></div>';
     }
 
     async function loadDoctors() {
       try {
         const res = await fetch('/api/doctors');
         const doctors = await res.json();
-        const opts = doctors.map(d => `<option value="${d.id}">${esc(d.name)} — ${esc(d.specialty)}</option>`).join('');
+        const opts = doctors.map(d => `<option value="${d.id}" data-name="${esc(d.name)}" data-specialty="${esc(d.specialty)}">${esc(d.name)} — ${esc(d.specialty)}</option>`).join('');
         doctorSelect.innerHTML = '<option value="">Select a doctor...</option>' + opts;
         editDoctorSelect.innerHTML = '<option value="">Select a doctor...</option>' + opts;
+        if (symptomSuggestions.length) applySuggestedSpecialist(symptomSuggestions);
       } catch {}
     }
+
+    function applySuggestedSpecialist(suggestions) {
+      const list = Array.isArray(suggestions) ? suggestions : [];
+      if (!list.length) return;
+      const normalized = list.map(s => String(s).toLowerCase());
+      const match = Array.from(doctorSelect.options).find(option => {
+        const specialty = String(option.dataset.specialty || '').toLowerCase();
+        return normalized.some(item => specialty.includes(item) || item.includes(specialty));
+      });
+      if (!match) return;
+      doctorSelect.value = match.value;
+      if (editDoctorSelect) editDoctorSelect.value = match.value;
+    }
+
+    async function handleSymptomCheck() {
+      const value = symptomInput.value.trim();
+      if (!value) {
+        showToast('Please describe your symptoms first', 'error');
+        symptomInput.focus();
+        return;
+      }
+      symptomSubmit.disabled = true;
+      symptomSubmit.textContent = 'Checking...';
+      try {
+        const res = await api('/api/symptoms', { method: 'POST', body: JSON.stringify({ symptoms: value }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Unable to get suggestions');
+        symptomSuggestions = data.suggestions || [];
+        const suggestionsHtml = symptomSuggestions.map(item => `<span class="symptom-chip">${esc(item)}</span>`).join('');
+        let note = 'You can still choose a doctor manually if you prefer.';
+        const match = Array.from(doctorSelect.options).find(option => {
+          const specialty = String(option.dataset.specialty || '').toLowerCase();
+          return symptomSuggestions.some(item => specialty.includes(item.toLowerCase()) || item.toLowerCase().includes(specialty));
+        });
+        if (match) {
+          doctorSelect.value = match.value;
+          if (editDoctorSelect) editDoctorSelect.value = match.value;
+          note = `Suggested doctor preselected: ${esc(match.text)}.`;
+        }
+        symptomResults.innerHTML = `
+          <div><strong>Suggested specialist areas</strong></div>
+          <div>${suggestionsHtml}</div>
+          <div class="symptom-note">${esc(note)}</div>
+          <div class="symptom-note">${esc(data.disclaimer || '')}</div>
+        `;
+        symptomResults.style.display = 'block';
+        showToast('Specialist suggestions ready', 'success');
+      } catch (err) {
+        showToast(err.message || 'Unable to get suggestions', 'error');
+      } finally {
+        symptomSubmit.disabled = false;
+        symptomSubmit.textContent = 'Get specialist suggestions';
+      }
+    }
+
+    symptomSubmit.addEventListener('click', handleSymptomCheck);
+    symptomClear.addEventListener('click', () => {
+      symptomInput.value = '';
+      symptomResults.innerHTML = '';
+      symptomResults.style.display = 'none';
+      symptomSuggestions = [];
+    });
+    symptomInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        handleSymptomCheck();
+      }
+    });
+
+    setTimeout(() => symptomInput.focus(), 250);
 
     async function loadAppointments(filters, page) {
       list.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading appointments...</div>';
@@ -193,12 +390,11 @@
         }
         params.set('page', page);
         params.set('limit', PAGE_SIZE);
-        const qs = params.toString();
-        const res = await api('/api/appointments' + (qs ? '?' + qs : ''));
+        const res = await api('/api/appointments' + (params.toString() ? '?' + params.toString() : ''));
         if (!res.ok) throw new Error('Failed');
         return await res.json();
       } catch {
-        list.innerHTML = emptyState('Could not load appointments', 'Sign in to see your appointments.');
+        list.innerHTML = emptyState('Could not load appointments', 'Please sign in and try again.');
         return null;
       }
     }
@@ -212,27 +408,22 @@
         return;
       }
 
-      list.innerHTML = '<div class="appointment-cards">' +
-        appointments.map(a => `
-          <div class="appt-card">
-            <div class="appt-info">
-              <div class="name">${esc(a.patientName)}${a.medication ? ' — ' + esc(a.medication) : ''}</div>
-              <div class="meta">
-                <span>Dr. ${esc(a.doctorName)}</span>
-                <span>${a.appointmentDate} ${a.appointmentTime}</span>
-              </div>
-              <div class="meta">
-                <span class="status-badge status-${a.status}">${a.status}</span>
-                ${a.notes ? '<span>Notes: ' + esc(a.notes) + '</span>' : ''}
-                ${a.attachments && a.attachments.length ? `<span>${a.attachments.length} file(s)</span>` : ''}
-              </div>
-            </div>
-            <div class="appt-actions">
-              <button class="btn btn-outline btn-sm edit-btn" data-id="${a.id}">Edit</button>
-              <button class="btn btn-danger btn-sm cancel-btn" data-id="${a.id}">Cancel</button>
+      list.innerHTML = '<div class="appointment-cards">' + appointments.map(a => `
+        <div class="appt-card">
+          <div class="appt-info">
+            <div class="name">${esc(a.patientName)}</div>
+            <div class="meta"><span>Dr. ${esc(a.doctorName)}</span><span>${a.appointmentDate} ${a.appointmentTime}</span></div>
+            <div class="meta">
+              <span class="status-badge status-${a.status}">${a.status}</span>
+              ${a.notes ? '<span>Notes: ' + esc(a.notes) + '</span>' : ''}
             </div>
           </div>
-        `).join('') + '</div>';
+          <div class="appt-actions">
+            <button class="btn btn-outline btn-sm edit-btn" data-id="${a.id}">Edit</button>
+            <button class="btn btn-danger btn-sm cancel-btn" data-id="${a.id}">Cancel</button>
+          </div>
+        </div>
+      `).join('') + '</div>';
 
       list.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => openEditModal(btn.dataset.id)));
       list.querySelectorAll('.cancel-btn').forEach(btn => btn.addEventListener('click', () => {
@@ -272,12 +463,11 @@
     function renderAttachments(attachments) {
       const el = document.getElementById('edit-attachments');
       if (!attachments.length) { el.innerHTML = ''; return; }
-      el.innerHTML = '<div style="font-size:0.75rem;color:var(--gray-400);margin-bottom:0.3rem;">Attachments</div>' +
-        attachments.map(at => `
-          <span class="attachment-chip">
-            <a href="/api/appointments/${editTarget}/attachments/${at.id}" target="_blank">${esc(at.fileName)}</a>
-            <button class="del" data-attach="${at.id}" title="Remove">&times;</button>
-          </span>`).join('');
+      el.innerHTML = '<div style="font-size:0.75rem;color:var(--gray-400);margin-bottom:0.3rem;">Attachments</div>' + attachments.map(at => `
+        <span class="attachment-chip">
+          <a href="/api/appointments/${editTarget}/attachments/${at.id}" target="_blank">${esc(at.fileName)}</a>
+          <button class="del" data-attach="${at.id}" title="Remove">&times;</button>
+        </span>`).join('');
       el.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async () => {
         const r = await api(`/api/appointments/${editTarget}/attachments/${btn.dataset.attach}`, { method: 'DELETE' });
         if (r.ok) { showToast('Attachment removed'); renderAttachments(attachments.filter(x => x.id !== btn.dataset.attach)); }
@@ -308,8 +498,9 @@
       renderAppointments(data);
     }
 
-    function doctorIdOf(select) {
-      return select.options[select.selectedIndex]?.value || '';
+    function doctorNameOf(select) {
+      const option = select.options[select.selectedIndex];
+      return option?.dataset.name || option?.textContent.replace(/\s—.*$/, '') || '';
     }
 
     form.addEventListener('submit', async (e) => {
@@ -320,8 +511,8 @@
       const fd = new FormData(form);
       const payload = {
         patientName: fd.get('patientName').toString().trim(),
-        doctorName: doctorSelect.options[doctorSelect.selectedIndex].text.replace(/\s—.*$/, ''),
-        doctorId: doctorIdOf(doctorSelect),
+        doctorName: doctorNameOf(doctorSelect),
+        doctorId: doctorSelect.value,
         appointmentDate: fd.get('appointmentDate').toString().trim(),
         appointmentTime: fd.get('appointmentTime').toString().trim(),
         notes: fd.get('notes').toString().trim(),
@@ -357,8 +548,8 @@
       const fd = new FormData(editForm);
       const payload = {
         patientName: fd.get('patientName').toString().trim(),
-        doctorName: editDoctorSelect.options[editDoctorSelect.selectedIndex].text.replace(/\s—.*$/, ''),
-        doctorId: doctorIdOf(editDoctorSelect),
+        doctorName: doctorNameOf(editDoctorSelect),
+        doctorId: editDoctorSelect.value,
         appointmentDate: fd.get('appointmentDate').toString().trim(),
         appointmentTime: fd.get('appointmentTime').toString().trim(),
         notes: fd.get('notes').toString().trim(),
@@ -420,8 +611,6 @@
 
     modal.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.remove('open'); deleteTarget = null; } });
     editModal.addEventListener('click', (e) => { if (e.target === editModal) { editModal.classList.remove('open'); editTarget = null; } });
-
-    if (isLoggedIn()) refreshList();
   </script>
 </body>
 </html>

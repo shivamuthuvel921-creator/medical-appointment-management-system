@@ -97,7 +97,6 @@ router.post('/', async (req, res) => {
 
   const missing = [];
   if (!patientName?.trim()) missing.push('patientName');
-  if (!medication?.trim()) missing.push('medication');
   if (!doctorName?.trim()) missing.push('doctorName');
   if (!appointmentDate?.trim()) missing.push('appointmentDate');
   if (!appointmentTime?.trim()) missing.push('appointmentTime');
