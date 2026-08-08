@@ -63,6 +63,15 @@ export async function sendAppointmentReminder(user, appointment) {
   });
 }
 
+export async function sendMedicationReminderEmail(user, dose, medication) {
+  return sendMail({
+    to: user.email,
+    subject: `Medication reminder — ${medication.name} — MedCare`,
+    text: `Hi ${user.name},\n\nReminder: take ${medication.name} (${medication.dosage || 'as prescribed'}) at ${dose.scheduledAt}.\n${medication.instructions ? `Instructions: ${medication.instructions}\n` : ''}Remember to take your medication on time.\n\n— MedCare`,
+    html: `<p>Hi <strong>${user.name}</strong>,</p><p>Reminder: take <strong>${medication.name}</strong> (${medication.dosage || 'as prescribed'}) at <strong>${dose.scheduledAt}</strong>.</p>${medication.instructions ? `<p>Instructions: ${medication.instructions}</p>` : ''}<p>Remember to take your medication on time.</p><p>— MedCare</p>`,
+  });
+}
+
 export async function sendPasswordResetEmail(user, resetUrl) {
   return sendMail({
     to: user.email,

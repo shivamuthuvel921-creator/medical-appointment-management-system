@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medications — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .meds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+    .med-card { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 1rem; background: #fff; display: grid; gap: 0.5rem; }
+    .med-card .med-name { font-weight: 700; color: var(--gray-800); font-size: 1rem; }
+    .med-card .med-meta { font-size: 0.82rem; color: var(--gray-500); display: grid; gap: 0.15rem; }
+    .med-card .med-sched { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.3rem; }
+    .time-chip { background: var(--primary-light); color: var(--primary-dark); border-radius: var(--radius-full); padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; }
+    .med-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+    .dose-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; border-bottom: 1px solid var(--gray-100); padding: 0.5rem 0; }
+    .dose-row:last-child { border-bottom: none; }
+    .dose-time { font-weight: 700; color: var(--gray-700); }
+    .dose-status { font-size: 0.78rem; font-weight: 600; }
+    .dose-status.taken { color: #15803d; }
+    .dose-status.skipped, .dose-status.missed { color: var(--danger); }
+    .dose-status.pending { color: var(--gray-500); }
+    .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+    .stat-box { background: white; border-radius: var(--radius-sm); padding: 0.9rem; text-align: center; box-shadow: var(--shadow); border: 1px solid var(--gray-100); }
+    .stat-box .n { font-size: 1.4rem; font-weight: 800; color: var(--primary); }
+    .stat-box .l { font-size: 0.72rem; color: var(--gray-400); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    @media (max-width: 800px) {
+      .meds-grid { grid-template-columns: 1fr; }
+      .stat-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/booking.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/medications.html">Medications</a>
+      <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
+      <a href="/login.html" id="login-link">Login</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Medication Reminders</h1>
+      <p>Add your medicines and get reminded when it's time to take a dose. Mark each dose as taken or skipped to track your routine.</p>
+    </div>
+
+    <div class="stat-strip" id="stats-strip">
+      <div class="stat-box"><div class="n" id="stat-total">—</div><div class="l">Total doses</div></div>
+      <div class="stat-box"><div class="n" id="stat-taken">—</div><div class="l">Taken</div></div>
+      <div class="stat-box"><div class="n" id="stat-skipped">—</div><div class="l">Skipped</div></div>
+      <div class="stat-box"><div class="n" id="stat-missed">—</div><div class="l">Missed</div></div>
+    </div>
+
+    <div class="meds-grid">
+      <div class="card">
+        <h2>My Medications</h2>
+        <div id="med-list"></div>
+      </div>
+
+      <div class="card">
+        <h2 id="form-title">Add a Medication</h2>
+        <form id="med-form" novalidate>
+          <input name="name" id="med-name" placeholder="Medication name" required />
+          <input name="dosage" id="med-dosage" placeholder="Dosage, e.g. 500mg twice daily" />
+          <input name="startDate" id="med-startDate" type="date" value="" required />
+          <input name="endDate" id="med-endDate" type="date" placeholder="End date (optional)" />
+          <label>Reminder times (HH:MM, one per line)</label>
+          <textarea id="med-times" placeholder="08:00&#10;14:00&#10;20:00" rows="4" required></textarea>
+          <label>Days of week (leave all unchecked for every day)</label>
+          <div id="med-days" style="display:flex;gap:0.3rem;flex-wrap:wrap;">
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="0" /> Sun</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="1" /> Mon</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="2" /> Tue</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="3" /> Wed</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="4" /> Thu</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="5" /> Fri</label>
+            <label style="font-weight:400;font-size:0.85rem;"><input type="checkbox" value="6" /> Sat</label>
+          </div>
+          <textarea name="instructions" id="med-instructions" placeholder="Instructions (optional), e.g. take after breakfast"></textarea>
+          <div class="med-actions">
+            <button type="submit" class="btn btn-primary" id="save-btn">Save Medication</button>
+            <button type="button" class="btn btn-outline" id="cancel-edit" style="display:none;">Cancel Edit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <h2>Today's Doses</h2>
+      <div id="today-doses"></div>
+      <div id="today-stats" style="margin-top:0.75rem;font-size:0.85rem;color:var(--gray-500);"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { isLoggedIn, api, setupNav, esc, showToast, emptyState } from './common.js';
+
+    if (!isLoggedIn()) window.location.href = '/login.html';
+    setupNav('/medications.html');
+
+    const form = document.getElementById('med-form');
+    const medList = document.getElementById('med-list');
+    const todayDoses = document.getElementById('today-doses');
+    const timesEl = document.getElementById('med-times');
+    const daysEl = document.getElementById('med-days');
+    const startDateEl = document.getElementById('med-startDate');
+    let medications = [];
+    let editingId = null;
+
+    function todayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function parseSchedules() {
+      const times = timesEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+      const checked = Array.from(daysEl.querySelectorAll('input:checked')).map(c => parseInt(c.value, 10));
+      const schedules = [];
+      for (const t of times) {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) continue;
+        if (checked.length > 0) {
+          for (const d of checked) schedules.push({ dayOfWeek: d, timeOfDay: t });
+        } else {
+          schedules.push({ dayOfWeek: -1, timeOfDay: t });
+        }
+      }
+      return schedules;
+    }
+
+    function scheduleLabel(med) {
+      const times = new Set();
+      let everyDay = true;
+      const days = new Set();
+      for (const s of med.schedules || []) {
+        times.add(s.timeOfDay);
+        if (s.dayOfWeek >= 0) { everyDay = false; days.add(s.dayOfWeek); }
+      }
+      const timesHtml = [...times].sort().map(t => `<span class="time-chip">${esc(t)}</span>`).join('');
+      const dayHtml = everyDay ? 'every day' : `on ${[...days].map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')}`;
+      return { timesHtml, dayHtml };
+    }
+
+    async function refresh() {
+      const res = await api('/api/medications');
+      if (!res.ok) return;
+      medications = await res.json();
+
+      if (medications.length === 0) {
+        medList.innerHTML = emptyState('No medications yet', 'Add your first medication above to get reminders.');
+      } else {
+        medList.innerHTML = medications.map(med => {
+          const label = scheduleLabel(med);
+          return `<div class="med-card">
+            <div class="med-name">${esc(med.name)}</div>
+            <div class="med-meta">
+              <span>${esc(med.dosage || 'No dosage specified')}</span>
+              <span>${esc(med.startDate)}${med.endDate ? ' → ' + esc(med.endDate) : ''}</span>
+              ${med.instructions ? `<span>${esc(med.instructions)}</span>` : ''}
+              <span style="color:var(--gray-400);">${label.dayHtml}</span>
+            </div>
+            <div class="med-sched">${label.timesHtml}</div>
+            <div class="med-actions">
+              <button class="btn btn-outline btn-sm" data-edit="${med.id}">Edit</button>
+              <button class="btn btn-danger btn-sm" data-del="${med.id}">Delete</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+      await loadToday();
+      await loadStats();
+    }
+
+    async function loadStats() {
+      try {
+        const res = await api('/api/medications/stats');
+        if (res.ok) {
+          const s = await res.json();
+          const label = (id, n) => { document.getElementById(id).textContent = n ?? 0; };
+          label('stat-total', s.total);
+          label('stat-taken', s.taken);
+          label('stat-skipped', s.skipped);
+          label('stat-missed', s.missed);
+        }
+      } catch {}
+    }
+
+    async function loadToday() {
+      const res = await api('/api/medications/doses/today');
+      if (!res.ok) return;
+      const data = await res.json();
+      const doses = data.doses || [];
+      if (doses.length === 0) {
+        todayDoses.innerHTML = emptyState('No doses today', 'Your scheduled doses for today will show up here.');
+        return;
+      }
+      todayDoses.innerHTML = doses.map(d => {
+        const cls = d.status || 'pending';
+        const statusText = { pending: 'Pending', taken: 'Taken', skipped: 'Skipped', missed: 'Missed' }[cls] || cls;
+        const buttons = cls === 'pending'
+          ? `<button class="btn btn-primary btn-sm" data-taken="${d.id}">Taken</button>
+             <button class="btn btn-outline btn-sm" data-skipped="${d.id}">Skipped</button>`
+          : `<span class="dose-status ${cls}">${statusText}</span>`;
+        return `<div class="dose-row">
+          <div>
+            <span class="dose-time">${esc(d.scheduledAt.split(' ')[1])}</span>
+            <span style="margin-left:0.5rem;font-weight:600;">${esc(d.medicationName)}</span>
+            <span style="margin-left:0.5rem;color:var(--gray-400);font-size:0.8rem;">${esc(d.dosage || '')}</span>
+          </div>
+          <div style="display:flex;gap:0.4rem;align-items:center;">${buttons}</div>
+        </div>`;
+      }).join('');
+      document.getElementById('today-stats').textContent = `Schedule for ${data.date}. Reminders are also sent by email at each dose time.`;
+    }
+
+    async function respond(doseId, status) {
+      const res = await api(`/api/medications/doses/${doseId}/respond`, { method: 'POST', body: JSON.stringify({ status }) });
+      if (res.ok) {
+        showToast(`Marked as ${status}`);
+        await loadToday();
+        await loadStats();
+      } else {
+        const e = await res.json().catch(() => ({}));
+        showToast(e.error || 'Failed to update dose', 'error');
+      }
+    }
+
+    medList.addEventListener('click', async (e) => {
+      const delBtn = e.target.closest('[data-del]');
+      const editBtn = e.target.closest('[data-edit]');
+      if (delBtn) {
+        const id = delBtn.dataset.del;
+        if (!confirm('Delete this medication and its dose history?')) return;
+        const res = await api(`/api/medications/${id}`, { method: 'DELETE' });
+        showToast(res.ok ? 'Medication deleted' : 'Delete failed', res.ok ? 'success' : 'error');
+        refresh();
+      } else if (editBtn) {
+        const id = editBtn.dataset.edit;
+        startEdit(id);
+      }
+    });
+
+    todayDoses.addEventListener('click', (e) => {
+      const taken = e.target.closest('[data-taken]');
+      const skipped = e.target.closest('[data-skipped]');
+      if (taken) respond(taken.dataset.taken, 'taken');
+      if (skipped) respond(skipped.dataset.skipped, 'skipped');
+    });
+
+    function startEdit(id) {
+      const med = medications.find(m => m.id === id);
+      if (!med) return;
+      editingId = id;
+      document.getElementById('form-title').textContent = 'Edit Medication';
+      document.getElementById('med-name').value = med.name;
+      document.getElementById('med-dosage').value = med.dosage || '';
+      document.getElementById('med-startDate').value = med.startDate;
+      document.getElementById('med-endDate').value = med.endDate || '';
+      document.getElementById('med-instructions').value = med.instructions || '';
+      const times = [...new Set((med.schedules || []).map(s => s.timeOfDay))];
+      timesEl.value = times.join('\n');
+      const everyDay = med.schedules.every(s => s.dayOfWeek < 0);
+      if (everyDay) {
+        daysEl.querySelectorAll('input').forEach(c => c.checked = false);
+      } else {
+        const active = new Set(med.schedules.map(s => String(s.dayOfWeek)));
+        daysEl.querySelectorAll('input').forEach(c => c.checked = active.has(c.value));
+      }
+      document.getElementById('save-btn').textContent = 'Save Changes';
+      document.getElementById('cancel-edit').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', resetForm);
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      document.getElementById('form-title').textContent = 'Add a Medication';
+      document.getElementById('save-btn').textContent = 'Save Medication';
+      document.getElementById('cancel-edit').style.display = 'none';
+      startDateEl.value = todayStr();
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('med-name').value.trim();
+      const dosage = document.getElementById('med-dosage').value.trim();
+      const startDate = document.getElementById('med-startDate').value;
+      const endDate = document.getElementById('med-endDate').value || null;
+      const instructions = document.getElementById('med-instructions').value.trim();
+      const schedules = parseSchedules();
+
+      if (!name) return showToast('Medication name is required', 'error');
+      if (!startDate) return showToast('Start date is required', 'error');
+      if (schedules.length === 0) return showToast('Enter at least one valid reminder time (HH:MM)', 'error');
+
+      const body = { name, dosage, startDate, endDate, instructions, schedules };
+      const url = editingId ? `/api/medications/${editingId}` : '/api/medications';
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await api(url, { method, body: JSON.stringify(body) });
+      if (res.ok) {
+        showToast(editingId ? 'Medication updated' : 'Medication added');
+        resetForm();
+        refresh();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || 'Save failed', 'error');
+      }
+    });
+
+    resetForm();
+    refresh();
+  </script>
+</body>
+</html>

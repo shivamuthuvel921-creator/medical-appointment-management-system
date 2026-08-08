@@ -13,6 +13,23 @@ if (config.dbPath !== ':memory:') {
 
 db.pragma('foreign_keys = ON');
 
+// ─── Legacy cleanup ───────────────────────────────────
+// An earlier prototype used medication_schedules(id, medicationId, timeOfDay, dose)
+// and a medication_logs table. If present, stash the schedule rows and drop the
+// incompatible tables so the schema below can rebuild them in the new format.
+let legacyScheduleRows = [];
+if (config.dbPath !== ':memory:') {
+  try {
+    const hasLegacySchedule = db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('medication_schedules') WHERE name = 'dose'").get().n > 0;
+    if (hasLegacySchedule) {
+      legacyScheduleRows = db.prepare('SELECT * FROM medication_schedules').all();
+      db.exec('DROP TABLE IF EXISTS medication_schedules; DROP TABLE IF EXISTS medication_logs;');
+    }
+  } catch {
+    // tables may simply not exist yet
+  }
+}
+
 // ─── Schema ──────────────────────────────────────────
 
 db.exec(`
@@ -93,6 +110,39 @@ db.exec(`
     endTime TEXT NOT NULL,
     FOREIGN KEY (doctorId) REFERENCES doctors(id)
   );
+
+  CREATE TABLE IF NOT EXISTS medications (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    dosage TEXT DEFAULT '',
+    instructions TEXT DEFAULT '',
+    startDate TEXT NOT NULL,
+    endDate TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS medication_schedules (
+    id TEXT PRIMARY KEY,
+    medicationId TEXT NOT NULL,
+    dayOfWeek INTEGER NOT NULL DEFAULT -1,
+    timeOfDay TEXT NOT NULL,
+    FOREIGN KEY (medicationId) REFERENCES medications(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS medication_doses (
+    id TEXT PRIMARY KEY,
+    medicationId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    scheduledAt TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    notifiedAt TEXT,
+    respondedAt TEXT,
+    FOREIGN KEY (medicationId) REFERENCES medications(id) ON DELETE CASCADE,
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
 `);
 
 // ─── Migrations ──────────────────────────────────────
@@ -112,6 +162,24 @@ function migrate() {
     db.exec(`ALTER TABLE doctors ADD COLUMN userId TEXT`);
   }
 
+  // Medication module tables may exist from an earlier schema; backfill missing columns.
+  if (tableHasColumn('medications', 'name') && !tableHasColumn('medications', 'instructions')) {
+    db.exec(`ALTER TABLE medications ADD COLUMN instructions TEXT DEFAULT ''`);
+  }
+
+  // Restore legacy schedule rows (migrated after schema rebuild).
+  for (const row of legacyScheduleRows) {
+    try {
+      const medication = getMedicationById(row.medicationId);
+      if (medication) {
+        setMedicationSchedules(row.medicationId, [{ dayOfWeek: -1, timeOfDay: row.timeOfDay }]);
+      }
+    } catch {
+      // ignore rows that reference removed medications
+    }
+  }
+  legacyScheduleRows = [];
+
   db.exec(`
     UPDATE appointments
     SET doctorId = (SELECT d.id FROM doctors d WHERE d.name = appointments.doctorName LIMIT 1)
@@ -125,6 +193,10 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_audit_appointment ON appointment_audit(appointmentId);
     CREATE INDEX IF NOT EXISTS idx_attachments_appointment ON attachments(appointmentId);
     CREATE INDEX IF NOT EXISTS idx_slots_doctor ON doctor_slots(doctorId);
+    CREATE INDEX IF NOT EXISTS idx_meds_user ON medications(userId);
+    CREATE INDEX IF NOT EXISTS idx_medschedules_med ON medication_schedules(medicationId);
+    CREATE INDEX IF NOT EXISTS idx_doses_user ON medication_doses(userId);
+    CREATE INDEX IF NOT EXISTS idx_doses_scheduled ON medication_doses(scheduledAt);
   `);
 }
 migrate();
@@ -169,6 +241,21 @@ const insertAttachmentStmt = db.prepare(`
 const insertSlotStmt = db.prepare(`
   INSERT INTO doctor_slots (id, doctorId, dayOfWeek, startTime, endTime)
   VALUES (@id, @doctorId, @dayOfWeek, @startTime, @endTime)
+`);
+
+const insertMedicationStmt = db.prepare(`
+  INSERT INTO medications (id, userId, name, dosage, instructions, startDate, endDate, active)
+  VALUES (@id, @userId, @name, @dosage, @instructions, @startDate, @endDate, @active)
+`);
+
+const insertMedicationScheduleStmt = db.prepare(`
+  INSERT INTO medication_schedules (id, medicationId, dayOfWeek, timeOfDay)
+  VALUES (@id, @medicationId, @dayOfWeek, @timeOfDay)
+`);
+
+const insertMedicationDoseStmt = db.prepare(`
+  INSERT INTO medication_doses (id, medicationId, userId, scheduledAt, status)
+  VALUES (@id, @medicationId, @userId, @scheduledAt, @status)
 `);
 
 // ─── Users ────────────────────────────────────────────
@@ -358,8 +445,8 @@ export function getAppointmentStats(user, doctorId) {
   const conditions = [];
   const params = [];
 
-  if (scope?.userId) { conditions.push('userId = ?'); params.push(scope.userId); }
-  if (scope?.doctorId) { conditions.push('doctorId = ?'); params.push(scope.doctorId); }
+  if (scope?.userId) { conditions.push('appointments.userId = ?'); params.push(scope.userId); }
+  if (scope?.doctorId) { conditions.push('appointments.doctorId = ?'); params.push(scope.doctorId); }
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
   const base = db.prepare(`
@@ -495,6 +582,194 @@ export function deleteAttachmentById(id) {
 }
 
 // ─── Close ────────────────────────────────────────────
+
+// ─── Medications ──────────────────────────────────────
+
+export function createMedication(medication) {
+  insertMedicationStmt.run({
+    ...medication,
+    active: medication.active === undefined ? 1 : (medication.active ? 1 : 0),
+  });
+  return getMedicationById(medication.id);
+}
+
+function withSchedules(medication) {
+  if (!medication) return medication;
+  return {
+    ...medication,
+    schedules: db.prepare(
+      'SELECT id, dayOfWeek, timeOfDay FROM medication_schedules WHERE medicationId = ? ORDER BY dayOfWeek, timeOfDay'
+    ).all(medication.id),
+  };
+}
+
+export function getMedicationById(id) {
+  return withSchedules(db.prepare('SELECT * FROM medications WHERE id = ?').get(id));
+}
+
+export function getUserMedications(userId) {
+  return db.prepare('SELECT * FROM medications WHERE userId = ? ORDER BY createdAt DESC').all(userId).map(withSchedules);
+}
+
+export function updateMedication(id, fields) {
+  const sets = [];
+  const params = [];
+  for (const key of ['name', 'dosage', 'instructions', 'startDate', 'endDate', 'active']) {
+    if (fields[key] !== undefined) {
+      if (key === 'active') {
+        sets.push('active=?');
+        params.push(fields[key] ? 1 : 0);
+      } else {
+        sets.push(`${key}=?`);
+        params.push(fields[key]);
+      }
+    }
+  }
+  if (sets.length > 0) {
+    params.push(id);
+    db.prepare(`UPDATE medications SET ${sets.join(', ')} WHERE id=?`).run(...params);
+  }
+  return getMedicationById(id);
+}
+
+export function setMedicationSchedules(medicationId, schedules) {
+  const tx = db.transaction((items) => {
+    db.prepare('DELETE FROM medication_schedules WHERE medicationId = ?').run(medicationId);
+    const insert = db.prepare(
+      'INSERT INTO medication_schedules (id, medicationId, dayOfWeek, timeOfDay) VALUES (?, ?, ?, ?)'
+    );
+    for (const s of items || []) {
+      insert.run(crypto.randomUUID(), medicationId, s.dayOfWeek, s.timeOfDay);
+    }
+  });
+  tx(schedules);
+  return getMedicationById(medicationId);
+}
+
+export function deleteMedicationById(id) {
+  const result = db.transaction(() => {
+    db.prepare('DELETE FROM medication_doses WHERE medicationId = ?').run(id);
+    db.prepare('DELETE FROM medication_schedules WHERE medicationId = ?').run(id);
+    return db.prepare('DELETE FROM medications WHERE id = ?').run(id).changes > 0;
+  })();
+  return result;
+}
+
+export function getUpcomingMedicationDoses(userId, { from, to } = {}) {
+  const conditions = ['d.userId = ?'];
+  const params = [userId];
+  if (from) {
+    conditions.push('date(d.scheduledAt) >= ?');
+    params.push(from);
+  }
+  if (to) {
+    conditions.push('date(d.scheduledAt) <= ?');
+    params.push(to);
+  }
+  return db.prepare(`
+    SELECT d.*, m.name AS medicationName, m.dosage, m.instructions
+    FROM medication_doses d JOIN medications m ON m.id = d.medicationId
+    WHERE ${conditions.join(' AND ')} ORDER BY d.scheduledAt
+  `).all(...params);
+}
+
+export function getAllMedicationsWithSchedulesAndUser() {
+  return db.prepare(`
+    SELECT m.id AS medicationId, m.userId, m.name, m.dosage, m.instructions,
+           u.email AS userEmail, u.name AS userName, s.id AS scheduleId, s.dayOfWeek, s.timeOfDay
+    FROM medications m
+    JOIN users u ON u.id = m.userId
+    JOIN medication_schedules s ON s.medicationId = m.id
+    WHERE m.active = 1
+  `).all();
+}
+
+export function findDueMedicationDoses({ now, windowStart, windowEnd }) {
+  return db.prepare(`
+    SELECT d.*, m.name AS medicationName, m.dosage, m.instructions, u.email AS userEmail, u.name AS userName
+    FROM medication_doses d
+    JOIN medications m ON m.id = d.medicationId
+    JOIN users u ON u.id = d.userId
+    WHERE d.status = 'pending'
+      AND d.notifiedAt IS NULL
+      AND d.scheduledAt BETWEEN ? AND ?
+  `).all(windowStart, windowEnd);
+}
+
+export function findMissedMedicationDoses({ windowStart, windowEnd }) {
+  return db.prepare(`
+    SELECT d.*, m.name AS medicationName, u.email AS userEmail, u.name AS userName
+    FROM medication_doses d
+    JOIN medications m ON m.id = d.medicationId
+    JOIN users u ON u.id = d.userId
+    WHERE d.status = 'pending'
+      AND d.notifiedAt IS NULL
+      AND d.scheduledAt < ?
+  `).all(windowStart);
+}
+
+export function markDoseStatus(id, status) {
+  db.prepare(`UPDATE medication_doses SET status = ?, respondedAt = datetime('now') WHERE id = ?`).run(status, id);
+  return db.prepare('SELECT * FROM medication_doses WHERE id = ?').get(id);
+}
+
+export function getMedicationDoseForUser(userId, doseId) {
+  return db.prepare('SELECT * FROM medication_doses WHERE id = ? AND userId = ?').get(doseId, userId);
+}
+
+export function markDoseNotified(id) {
+  db.prepare(`UPDATE medication_doses SET notifiedAt = datetime('now') WHERE id = ?`).run(id);
+}
+
+// Expands a medication's schedules into dose records for today (or all days in range).
+export function expandSchedulesForRange(userId, medication, { startDate, endDate } = {}) {
+  const start = startDate || medication.startDate;
+  const end = endDate || medication.endDate || '9999-12-31';
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cursor = new Date(`${start}T00:00:00`);
+  const last = new Date(`${end}T00:00:00`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(last.getTime())) return 0;
+
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  let created = 0;
+  const insert = db.transaction(() => {
+    for (let day = new Date(cursor); day <= last; day = new Date(day.getTime() + dayMs)) {
+      const weekday = day.getDay();
+      for (const s of medication.schedules || []) {
+        if (s.dayOfWeek >= 0 && s.dayOfWeek !== weekday) continue;
+        const dateStr = fmt(day);
+        const exists = db.prepare(
+          'SELECT id FROM medication_doses WHERE medicationId = ? AND scheduledAt = ?'
+        ).get(medication.id, `${dateStr} ${s.timeOfDay}`);
+        if (!exists) {
+          insertMedicationDoseStmt.run({
+            id: crypto.randomUUID(),
+            medicationId: medication.id,
+            userId,
+            scheduledAt: `${dateStr} ${s.timeOfDay}`,
+            status: 'pending',
+          });
+          created++;
+        }
+      }
+    }
+  });
+  insert();
+  return created;
+}
+
+export function getMedicationAdherenceStats(userId) {
+  return db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN status='taken' THEN 1 ELSE 0 END), 0) AS taken,
+      COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END), 0) AS skipped,
+      COALESCE(SUM(CASE WHEN status='missed' THEN 1 ELSE 0 END), 0) AS missed,
+      COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) AS pending
+    FROM medication_doses WHERE userId = ?
+  `).get(userId);
+}
 
 export function closeDb() {
   db.close();

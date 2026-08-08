@@ -1,0 +1,4 @@
+◇ injected env (10) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+[reminders] service started (checking every 60s)
+[medication-reminders] service started (checking every 60s)
+Medication scheduler running at http://localhost:3000
