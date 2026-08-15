@@ -7,23 +7,6 @@
   <link rel="stylesheet" href="/styles.css" />
   <style>
     .meds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
-    .med-card { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 1rem; background: #fff; display: grid; gap: 0.5rem; }
-    .med-card .med-name { font-weight: 700; color: var(--gray-800); font-size: 1rem; }
-    .med-card .med-meta { font-size: 0.82rem; color: var(--gray-500); display: grid; gap: 0.15rem; }
-    .med-card .med-sched { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.3rem; }
-    .time-chip { background: var(--primary-light); color: var(--primary-dark); border-radius: var(--radius-full); padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; }
-    .med-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
-    .dose-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; border-bottom: 1px solid var(--gray-100); padding: 0.5rem 0; }
-    .dose-row:last-child { border-bottom: none; }
-    .dose-time { font-weight: 700; color: var(--gray-700); }
-    .dose-status { font-size: 0.78rem; font-weight: 600; }
-    .dose-status.taken { color: #15803d; }
-    .dose-status.skipped, .dose-status.missed { color: var(--danger); }
-    .dose-status.pending { color: var(--gray-500); }
-    .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
-    .stat-box { background: white; border-radius: var(--radius-sm); padding: 0.9rem; text-align: center; box-shadow: var(--shadow); border: 1px solid var(--gray-100); }
-    .stat-box .n { font-size: 1.4rem; font-weight: 800; color: var(--primary); }
-    .stat-box .l { font-size: 0.72rem; color: var(--gray-400); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
     @media (max-width: 800px) {
       .meds-grid { grid-template-columns: 1fr; }
       .stat-strip { grid-template-columns: repeat(2, 1fr); }
@@ -41,6 +24,7 @@
       <a href="/medications.html">Medications</a>
       <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
       <a href="/login.html" id="login-link">Login</a>
+      <a href="/doctor.html" id="doctor-link" style="display:none;">Doctor</a>
       <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
       <a href="#" id="logout-link" style="display:none;">Logout</a>
     </div>
@@ -103,9 +87,10 @@
   <div id="toast" class="toast"></div>
 
   <script type="module">
-    import { isLoggedIn, api, setupNav, esc, showToast, emptyState } from './common.js';
+    import { isLoggedIn, isDoctor, api, setupNav, esc, showToast, emptyState } from './common.js';
 
     if (!isLoggedIn()) window.location.href = '/login.html';
+    if (isDoctor()) window.location.href = '/doctor.html';
     setupNav('/medications.html');
 
     const form = document.getElementById('med-form');

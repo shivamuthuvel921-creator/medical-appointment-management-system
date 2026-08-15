@@ -1,6 +1,6 @@
-import { getToken, getUser, clearAuth, saveAuth, isLoggedIn, isAdmin, api } from './auth.js';
+import { getToken, getUser, clearAuth, saveAuth, isLoggedIn, isAdmin, isDoctor, api } from './auth.js';
 
-export { getToken, getUser, clearAuth, saveAuth, isLoggedIn, isAdmin, api };
+export { getToken, getUser, clearAuth, saveAuth, isLoggedIn, isAdmin, isDoctor, api };
 
 export function esc(s) {
   const d = document.createElement('div');
@@ -28,13 +28,19 @@ export function setupNav(activePage) {
   const adminLink = document.getElementById('admin-link');
   const profileLink = document.getElementById('profile-link');
   const registerLink = document.getElementById('register-link');
+  const doctorLink = document.getElementById('doctor-link');
 
   if (isLoggedIn()) {
     if (loginLink) loginLink.style.display = 'none';
     if (logoutLink) logoutLink.style.display = 'inline-block';
     if (adminLink && isAdmin()) adminLink.style.display = 'inline-block';
-    if (profileLink) profileLink.style.display = 'inline-block';
+    if (doctorLink && isDoctor()) { doctorLink.style.display = 'inline-block'; doctorLink.textContent = 'Doctor Profile'; }
+    if (profileLink) profileLink.style.display = isDoctor() ? 'none' : 'inline-block';
     if (registerLink) registerLink.style.display = 'none';
+    if (isDoctor()) {
+      document.querySelectorAll('.topbar-links a[href="/booking.html"]').forEach(a => a.style.display = 'none');
+      document.querySelectorAll('.topbar-links a[href="/medications.html"]').forEach(a => a.style.display = 'none');
+    }
     if (logoutLink) {
       logoutLink.addEventListener('click', (e) => {
         e.preventDefault();
@@ -77,7 +83,7 @@ export function bindPagination(container, onPage) {
   });
 }
 
-export function renderBarChart(el, items, { color = '#0f6b3b' } = {}) {
+export function renderBarChart(el, items, { color = '#0E6B4D' } = {}) {
   if (!items || items.length === 0) {
     el.innerHTML = emptyState('No data', 'Nothing to chart yet.');
     return;
@@ -96,13 +102,13 @@ export function renderBarChart(el, items, { color = '#0f6b3b' } = {}) {
     const y = pad + innerH - h;
     bars += `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="3" fill="${color}">
         <title>${esc(item.label)}: ${item.value}</title></rect>`;
-    bars += `<text x="${x + barW / 2}" y="${height - 6}" font-size="10" text-anchor="middle" fill="#6b7280">${esc(String(item.label).slice(0, 10))}</text>`;
-    bars += `<text x="${x + barW / 2}" y="${y - 4}" font-size="10" text-anchor="middle" font-weight="600" fill="#374151">${item.value}</text>`;
+    bars += `<text x="${x + barW / 2}" y="${height - 6}" font-size="10" text-anchor="middle" fill="#6B7D74">${esc(String(item.label).slice(0, 10))}</text>`;
+    bars += `<text x="${x + barW / 2}" y="${y - 4}" font-size="10" text-anchor="middle" font-weight="600" fill="#26322C">${item.value}</text>`;
   });
   el.innerHTML = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;max-width:${width}px" role="img" aria-label="Bar chart">${bars}</svg>`;
 }
 
-export function renderLineChart(el, items, { color = '#1d4ed8' } = {}) {
+export function renderLineChart(el, items, { color = '#2F6FD8' } = {}) {
   if (!items || items.length === 0) {
     el.innerHTML = emptyState('No data', 'Nothing to chart yet.');
     return;
@@ -123,7 +129,7 @@ export function renderLineChart(el, items, { color = '#1d4ed8' } = {}) {
   let labels = '';
   pts.forEach((p, i) => {
     if (i % Math.ceil(items.length / 12) === 0 || i === items.length - 1) {
-      labels += `<text x="${p.x}" y="${height - 6}" font-size="9" text-anchor="middle" fill="#9ca3af">${esc(String(p.item.label).slice(5))}</text>`;
+      labels += `<text x="${p.x}" y="${height - 6}" font-size="9" text-anchor="middle" fill="#94A29B">${esc(String(p.item.label).slice(5))}</text>`;
     }
     circles += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="${color}"><title>${esc(p.item.label)}: ${p.item.value}</title></circle>`;
   });

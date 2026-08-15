@@ -7,17 +7,11 @@
   <link rel="stylesheet" href="/styles.css" />
   <style>
     .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-    .admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-    .admin-table th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--gray-200); color: var(--gray-500); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em; }
-    .admin-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--gray-100); }
-    .admin-table tr:hover td { background: var(--gray-50); }
-    .admin-table .actions { display: flex; gap: 0.3rem; }
     .doctor-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .doctor-form-grid .full { grid-column: 1 / -1; }
     @media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } }
     .active-users { margin-top: 1.5rem; }
     .active-users table { font-size: 0.8rem; }
-    .admin-toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
   </style>
 </head>
 <body>
@@ -42,23 +36,12 @@
 
     <div class="card" style="margin-bottom:1.5rem;">
       <h2>Overview</h2>
-      <div class="stats-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;">
-        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
-          <div class="num" style="font-size:1.8rem;font-weight:800;color:var(--primary);" id="admin-total">—</div>
-          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Total Appointments</div>
-        </div>
-        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
-          <div class="num" style="font-size:1.8rem;font-weight:800;color:#1d4ed8;" id="admin-today">—</div>
-          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Today</div>
-        </div>
-        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
-          <div class="num" style="font-size:1.8rem;font-weight:800;color:#15803d;" id="admin-completed">—</div>
-          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Completed</div>
-        </div>
-        <div class="stat-card" style="background:white;border-radius:var(--radius-sm);padding:1.2rem;text-align:center;box-shadow:var(--shadow);border:1px solid var(--gray-100);">
-          <div class="num" style="font-size:1.8rem;font-weight:800;color:var(--danger);" id="admin-cancelled">—</div>
-          <div class="label" style="font-size:0.75rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;">Cancelled</div>
-        </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(5,1fr);">
+        <div class="stat-card"><div class="num" id="admin-total">—</div><div class="label">Total Appointments</div></div>
+        <div class="stat-card today"><div class="num" id="admin-today">—</div><div class="label">Today</div></div>
+        <div class="stat-card completed"><div class="num" id="admin-completed">—</div><div class="label">Completed</div></div>
+        <div class="stat-card cancelled"><div class="num" id="admin-cancelled">—</div><div class="label">Cancelled</div></div>
+        <div class="stat-card missed"><div class="num" id="admin-missed">—</div><div class="label">Missed</div></div>
       </div>
       <div class="chart-wrap" style="margin-top:1rem;">
         <div class="chart-box"><h3>By Specialty</h3><div id="chart-specialty"></div></div>
@@ -121,6 +104,21 @@
         </div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="admin-toolbar">
+        <h2 style="margin:0;">Audit Log</h2>
+        <input type="text" id="audit-search" placeholder="Search actor, patient, action..." style="flex:1;min-width:160px;" />
+        <button class="btn btn-primary btn-sm" id="audit-filter">Filter</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="admin-table">
+          <thead><tr><th>When</th><th>Actor</th><th>Patient</th><th>Action</th><th>Details</th></tr></thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+      <div id="audit-pagination" style="display:flex;justify-content:center;gap:0.5rem;margin-top:0.75rem;"></div>
+    </div>
   </div>
 
   <div id="toast" class="toast"></div>
@@ -132,6 +130,7 @@
 
     let page = 1;
     const PAGE_SIZE = 10;
+    let auditPage = 1;
 
     setupNav('/admin.html');
 
@@ -143,8 +142,9 @@
       document.getElementById('admin-today').textContent = s.upcomingToday || 0;
       document.getElementById('admin-completed').textContent = s.completed || 0;
       document.getElementById('admin-cancelled').textContent = s.cancelled || 0;
-      renderBarChart(document.getElementById('chart-specialty'), s.bySpecialty, { color: '#0f6b3b' });
-      renderBarChart(document.getElementById('chart-doctor'), s.byDoctor, { color: '#1d4ed8' });
+      document.getElementById('admin-missed').textContent = s.missed || 0;
+      renderBarChart(document.getElementById('chart-specialty'), s.bySpecialty, { color: '#0E6B4D' });
+      renderBarChart(document.getElementById('chart-doctor'), s.byDoctor, { color: '#2F6FD8' });
     }
 
     async function loadAllAppointments() {
@@ -253,10 +253,52 @@
       else { const err = await r.json(); showToast(err.error || 'Failed', 'error'); }
     });
 
+    async function loadAudit() {
+      const params = new URLSearchParams();
+      const search = document.getElementById('audit-search').value.trim();
+      if (search) params.set('search', search);
+      params.set('page', auditPage);
+      params.set('limit', PAGE_SIZE);
+      const res = await api('/api/admin/audit?' + params.toString());
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows = data.data || data;
+      document.getElementById('audit-body').innerHTML = rows.map(e => `
+        <tr>
+          <td>${esc(e.createdAt)}</td>
+          <td>${esc(e.actorName || e.actorId)}</td>
+          <td>${esc(e.patientName || '—')}</td>
+          <td><span class="status-badge" style="background:#E9F1FC;color:#2F6FD8;border-color:#C2D8F2;">${esc(e.action)}</span></td>
+          <td style="max-width:320px;">${esc(e.details || '')}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:1rem;">No audit entries</td></tr>';
+      const pag = document.getElementById('audit-pagination');
+      pag.innerHTML = '';
+      if (data.totalPages > 1) {
+        const prev = document.createElement('button');
+        prev.className = 'btn btn-outline btn-sm';
+        prev.textContent = 'Prev';
+        prev.disabled = auditPage <= 1;
+        prev.onclick = () => { auditPage--; loadAudit(); };
+        const info = document.createElement('span');
+        info.className = 'page-info';
+        info.textContent = `Page ${auditPage} of ${data.totalPages}`;
+        const next = document.createElement('button');
+        next.className = 'btn btn-outline btn-sm';
+        next.textContent = 'Next';
+        next.disabled = auditPage >= data.totalPages;
+        next.onclick = () => { auditPage++; loadAudit(); };
+        pag.append(prev, info, next);
+      }
+    }
+
+    document.getElementById('audit-filter').addEventListener('click', () => { auditPage = 1; loadAudit(); });
+
     loadStats();
     loadAllAppointments();
     loadDoctors();
     loadUsers();
+    loadAudit();
   </script>
 </body>
 </html>

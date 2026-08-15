@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Appointment Management — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    tr.emergency-row td { background: var(--danger-light) !important; }
+    .actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    .audit-item { border-left: 3px solid var(--foam); padding: 0.45rem 0 0.45rem 0.75rem; margin-bottom: 0.5rem; }
+    .audit-item .who { font-family: var(--font-mono); font-size: 0.74rem; font-weight: 700; color: var(--gray-700); }
+    .audit-item .when { font-family: var(--font-mono); font-size: 0.66rem; color: var(--gray-400); }
+    .audit-item .what { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+    .dt-section { border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 0.9rem; background: var(--surface); }
+    .dt-section h4 { margin: 0 0 0.6rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; }
+    .chat-box { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.6rem; }
+    .chat-msg { padding: 0.45rem 0.7rem; border: 1px solid var(--hairline); border-radius: var(--radius-sm); font-size: 0.8rem; max-width: 85%; }
+    .chat-msg.mine { background: var(--foam); border-color: #BFE4CF; align-self: flex-end; }
+    .chat-msg.other { background: var(--gray-50); align-self: flex-start; }
+    .chat-msg .who { font-size: 0.68rem; color: var(--gray-400); margin-bottom: 0.15rem; font-weight: 600; font-family: var(--font-mono); }
+    .rx-item-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.4fr auto; gap: 0.35rem; margin-bottom: 0.4rem; }
+    .rx-item-row input { padding: 0.4rem 0.55rem; font-size: 0.78rem; }
+    .rx-table td, .rx-table th { padding: 0.4rem 0.55rem; font-size: 0.78rem; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; }
+    .info-grid .info-item { font-size: 0.78rem; }
+    .info-grid .info-item .k { color: var(--gray-400); text-transform: uppercase; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.1em; font-weight: 600; }
+    @media (max-width: 600px) { .toolbar input, .toolbar select { min-width: 100%; flex: 1 1 100%; } }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/booking.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/medications.html">Medications</a>
+      <a href="/doctor.html">Doctor Portal</a>
+      <a href="/doctor-appointments.html">Appointments</a>
+      <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Appointment Management</h1>
+      <p>Manage your appointments — doctor view only.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <div class="toolbar">
+        <h2 style="margin:0;">Appointment Management</h2>
+        <input type="text" id="filter-search" placeholder="Search patient, medication..." />
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="rejected">Rejected</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <select id="filter-priority">
+          <option value="">All priorities</option>
+          <option value="normal">Normal</option>
+          <option value="emergency">Emergency</option>
+        </select>
+        <input type="date" id="filter-date-from" title="Date from" />
+        <input type="date" id="filter-date-to" title="Date to" />
+        <button class="btn btn-primary btn-sm" id="filter-apply">Filter</button>
+        <button class="btn btn-outline btn-sm" id="filter-clear">Clear</button>
+        <a class="export-link" href="/api/appointments/export">Export CSV</a>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="admin-table">
+          <thead><tr><th>Patient</th><th>Priority</th><th>Medication</th><th>Date &amp; Time</th><th>Status</th><th>Queue</th><th>Actions</th></tr></thead>
+          <tbody id="appointments-body"></tbody>
+        </table>
+      </div>
+      <div id="pagination" style="display:flex;justify-content:center;gap:0.5rem;margin-top:0.75rem;"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Details modal -->
+  <div class="modal-overlay" id="details-modal">
+    <div class="modal" style="max-width:640px;">
+      <h3 id="dt-title">Appointment Details</h3>
+      <div id="dt-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-sm" id="dt-reschedule" style="display:none;">Reschedule</button>
+        <button class="btn btn-primary btn-sm" id="dt-accept" style="display:none;">Accept</button>
+        <button class="btn btn-danger btn-sm" id="dt-reject" style="display:none;">Reject</button>
+        <button class="btn btn-primary btn-sm" id="dt-complete" style="display:none;">Mark Completed</button>
+        <button class="btn btn-danger btn-sm" id="dt-cancel" style="display:none;">Cancel</button>
+        <button class="btn btn-outline btn-sm" id="dt-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reschedule modal -->
+  <div class="modal-overlay" id="resched-modal">
+    <div class="modal" style="max-width:460px;">
+      <h3>Reschedule Appointment</h3>
+      <label style="font-size:0.8rem;color:var(--gray-500);">New date</label>
+      <input type="date" id="resched-date" />
+      <label style="font-size:0.8rem;color:var(--gray-500);">Available times</label>
+      <div id="resched-picker" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin:0.4rem 0;"></div>
+      <input type="time" id="resched-time" style="display:none;" />
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-sm" id="resched-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="resched-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getUser, isLoggedIn, isDoctor, api, setupNav, esc, showToast } from './common.js';
+
+    if (!isLoggedIn() || !isDoctor()) window.location.href = '/login.html';
+
+    setupNav('/doctor-appointments.html');
+
+    const tbody = document.getElementById('appointments-body');
+    const paginationEl = document.getElementById('pagination');
+    const detailsModal = document.getElementById('details-modal');
+    const reschedModal = document.getElementById('resched-modal');
+    let page = 1;
+    const PAGE_SIZE = 10;
+    let detailsData = null;
+    let chatTimer = null;
+
+    const user = getUser();
+
+    refreshList();
+
+    async function refreshList() {
+      const params = new URLSearchParams();
+      const search = document.getElementById('filter-search').value.trim();
+      const status = document.getElementById('filter-status').value;
+      const priority = document.getElementById('filter-priority').value;
+      const dateFrom = document.getElementById('filter-date-from').value;
+      const dateTo = document.getElementById('filter-date-to').value;
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      if (priority) params.set('priority', priority);
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+      params.set('page', page);
+      params.set('limit', PAGE_SIZE);
+      const res = await api('/api/appointments?' + params.toString());
+      if (!res.ok) { tbody.innerHTML = '<tr><td colspan="7">Failed to load</td></tr>'; return; }
+      const data = await res.json();
+      const apps = data.data || data;
+      if (!apps.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:1.2rem;">No appointments found.</td></tr>`;
+      } else {
+        tbody.innerHTML = apps.map(a => `
+          <tr class="${a.priority === 'emergency' ? 'emergency-row' : ''}">
+            <td><strong>${esc(a.patientName)}</strong>${a.notes ? `<div style="font-size:0.72rem;color:var(--gray-400);">${esc(a.notes.slice(0, 60))}</div>` : ''}</td>
+            <td><span class="priority-badge priority-${a.priority}">${esc(a.priority)}</span></td>
+            <td>${esc(a.medication)}</td>
+            <td>${a.appointmentDate}<br/><span style="color:var(--gray-400);font-size:0.78rem;">${a.appointmentTime}</span></td>
+            <td><span class="status-badge status-${a.status}">${a.status}</span></td>
+            <td><span class="queue-badge q-${a.queueStatus}">${esc(a.queueStatus)}</span></td>
+            <td>
+              <div class="actions">
+                <button class="btn btn-outline btn-sm view-btn" data-id="${a.id}">View</button>
+                ${a.status === 'scheduled' ? `<button class="btn btn-primary btn-sm accept-btn" data-id="${a.id}">Accept</button>` : ''}
+                ${a.status === 'scheduled' ? `<button class="btn btn-danger btn-sm reject-btn" data-id="${a.id}">Reject</button>` : ''}
+                ${(a.status === 'scheduled' || a.status === 'confirmed') ? `<button class="btn btn-primary btn-sm complete-btn" data-id="${a.id}">Complete</button>` : ''}
+                ${(a.status === 'scheduled' || a.status === 'confirmed' || a.status === 'completed') ? `<button class="btn btn-danger btn-sm cancel-btn" data-id="${a.id}">Cancel</button>` : ''}
+              </div>
+            </td>
+          </tr>`).join('');
+      }
+      bindRows();
+      renderPagination(data);
+    }
+
+    function bindRows() {
+      tbody.querySelectorAll('.view-btn').forEach(b => b.addEventListener('click', () => openDetails(b.dataset.id)));
+      tbody.querySelectorAll('.accept-btn').forEach(b => b.addEventListener('click', () => changeStatus(b.dataset.id, 'accepted')));
+      tbody.querySelectorAll('.reject-btn').forEach(b => b.addEventListener('click', () => changeStatus(b.dataset.id, 'rejected')));
+      tbody.querySelectorAll('.complete-btn').forEach(b => b.addEventListener('click', () => changeStatus(b.dataset.id, 'completed')));
+      tbody.querySelectorAll('.cancel-btn').forEach(b => b.addEventListener('click', () => changeStatus(b.dataset.id, 'cancelled')));
+    }
+
+    function renderPagination(data) {
+      paginationEl.innerHTML = '';
+      if (data.totalPages > 1) {
+        const prev = document.createElement('button');
+        prev.className = 'btn btn-outline btn-sm'; prev.textContent = 'Prev';
+        prev.disabled = page <= 1; prev.onclick = () => { page--; refreshList(); };
+        const info = document.createElement('span');
+        info.className = 'page-info'; info.textContent = `Page ${page} of ${data.totalPages}`;
+        const next = document.createElement('button');
+        next.className = 'btn btn-outline btn-sm'; next.textContent = 'Next';
+        next.disabled = page >= data.totalPages; next.onclick = () => { page++; refreshList(); };
+        paginationEl.append(prev, info, next);
+      }
+    }
+
+    async function changeStatus(id, action) {
+      if (action === 'cancelled' && !confirm('Cancel this appointment?')) return;
+      if (action === 'rejected' && !confirm('Reject this appointment? The patient will be notified.')) return;
+      const endpoint = action === 'accepted' ? `accept` : action === 'rejected' ? `reject` : '';
+      if (endpoint) {
+        const res = await api(`/api/appointments/${id}/${endpoint}`, { method: 'POST' });
+        if (res.ok) { showToast(action === 'accepted' ? 'Appointment accepted' : 'Appointment rejected', 'success'); }
+        else { const e = await res.json(); showToast(e.error || 'Action failed', 'error'); }
+      } else {
+        const res = await api('/api/appointments/' + id, { method: 'PUT', body: JSON.stringify({ status: action }) });
+        if (res.ok) { showToast('Status updated', 'success'); }
+        else { const e = await res.json(); showToast(e.error || 'Update failed', 'error'); }
+      }
+      refreshList();
+    }
+
+    // ─── Details modal ─────────────────────────────────
+    async function openDetails(id) {
+      const res = await api('/api/appointments/' + id);
+      if (!res.ok) return;
+      const a = await res.json();
+      detailsData = a;
+      detailsModal.dataset.id = id;
+      document.getElementById('dt-title').textContent = `Appointment — ${a.patientName}`;
+      document.getElementById('dt-accept').style.display = a.status === 'scheduled' ? 'inline-block' : 'none';
+      document.getElementById('dt-reject').style.display = a.status === 'scheduled' ? 'inline-block' : 'none';
+      document.getElementById('dt-complete').style.display = (a.status === 'scheduled' || a.status === 'confirmed') ? 'inline-block' : 'none';
+      document.getElementById('dt-cancel').style.display = (a.status === 'scheduled' || a.status === 'confirmed' || a.status === 'completed') ? 'inline-block' : 'none';
+      document.getElementById('dt-reschedule').style.display = (a.status === 'scheduled' || a.status === 'confirmed') ? 'inline-block' : 'none';
+      document.getElementById('dt-body').innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading patient info...</div>';
+      detailsModal.classList.add('open');
+
+      const attachments = (a.attachments || []).map(at => {
+        const cat = at.category ? ` <span class="priority-badge priority-normal">${esc(at.category)}</span>` : '';
+        const comment = at.doctorComment ? `<div style="font-size:0.75rem;color:var(--gray-500);margin-top:0.15rem;">Doc: ${esc(at.doctorComment)}</div>` : '';
+        return `<div style="margin-bottom:0.4rem;">${cat} <a href="/api/appointments/${id}/attachments/${at.id}" target="_blank">${esc(at.fileName)}</a>${comment}</div>`;
+      }).join('') || '<span style="color:var(--gray-400);font-size:0.8rem;">None</span>';
+
+      const audit = (a.audit || []).map(e => `
+        <div class="audit-item"><div class="who">${esc(e.action)} <span class="when">${esc(e.createdAt)}</span></div>
+        ${e.details ? `<div class="what">${esc(e.details)}</div>` : ''}</div>`).join('') || '<p style="color:var(--gray-400);font-size:0.8rem;">No history yet.</p>';
+
+      document.getElementById('dt-body').innerHTML = `
+        <div class="dt-section">
+          <h4>Overview</h4>
+          <div class="info-grid">
+            <div class="info-item"><div class="k">Patient</div><div><strong>${esc(a.patientName)}</strong></div></div>
+            <div class="info-item"><div class="k">Medication</div><div>${esc(a.medication)}</div></div>
+            <div class="info-item"><div class="k">Date</div><div>${a.appointmentDate} ${a.appointmentTime}</div></div>
+            <div class="info-item"><div class="k">Status</div><div><span class="status-badge status-${a.status}">${a.status}</span></div></div>
+            <div class="info-item"><div class="k">Priority</div><div><span class="priority-badge priority-${a.priority}">${a.priority}</span></div></div>
+            <div class="info-item"><div class="k">Queue</div><div><span class="queue-badge q-${a.queueStatus}">${esc(a.queueStatus)}</span></div></div>
+          </div>
+          ${a.notes ? `<p style="margin-top:0.6rem;font-size:0.8rem;"><strong>Notes:</strong> ${esc(a.notes)}</p>` : ''}
+          ${a.followUpDate ? `<p style="margin-top:0.4rem;font-size:0.8rem;color:var(--primary);"><strong>Follow-up scheduled:</strong> ${esc(a.followUpDate)}</p>` : ''}
+        </div>
+
+        <div class="dt-section" id="patient-section">
+          <h4>Patient Profile &amp; Medical History</h4>
+          <div class="loading-wrap"><div class="spinner"></div></div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Consultation Notes</h4>
+          <textarea id="notes-diagnosis" placeholder="Diagnosis / observations" rows="2" style="font-size:0.8rem;">${esc(a.diagnosis || '')}</textarea>
+          <div style="display:flex;gap:0.4rem;margin-top:0.4rem;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" id="notes-save">Save Notes</button>
+            <button class="btn btn-outline btn-sm" id="notes-record">Save &amp; Add to Health Record</button>
+          </div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Digital Prescription</h4>
+          <div id="rx-list"></div>
+          <div id="rx-form">
+            <div class="rx-item-row" id="rx-first-row"><input placeholder="Medicine" data-f="medicine"/><input placeholder="Dosage" data-f="dosage"/><input placeholder="Duration" data-f="duration"/><input placeholder="Instructions" data-f="instructions"/><button type="button" class="btn btn-outline btn-sm rx-del" style="padding:0.2rem 0.5rem;">−</button></div>
+            <button class="btn btn-outline btn-sm" id="rx-add-row" style="margin-top:0.4rem;">+ Add medicine</button>
+            <textarea id="rx-notes" placeholder="Prescription notes (optional)" rows="2" style="font-size:0.8rem;margin-top:0.4rem;width:100%;"></textarea>
+            <button class="btn btn-primary btn-sm" id="rx-save" style="margin-top:0.4rem;">Create Prescription</button>
+          </div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Lab Reports &amp; Files</h4>
+          <div id="files-list">${attachments}</div>
+          <div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap;">
+            <select id="file-category" style="padding:0.3rem;font-size:0.8rem;">
+              <option value="general">General</option>
+              <option value="lab">Lab Report</option>
+              <option value="prescription">Prescription</option>
+              <option value="imaging">Imaging</option>
+            </select>
+            <input type="file" id="file-upload" style="font-size:0.8rem;flex:1;" />
+            <button class="btn btn-primary btn-sm" id="file-upload-btn">Upload</button>
+          </div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Follow-up</h4>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+            <input type="date" id="fu-date" style="flex:1;min-width:130px;" />
+            <select id="fu-time" style="flex:1;min-width:100px;"><option value="">Select time</option></select>
+            <button class="btn btn-primary btn-sm" id="fu-save">Schedule Follow-up</button>
+          </div>
+          <p style="font-size:0.72rem;color:var(--gray-400);margin-top:0.3rem;">Picks the next free 30-min slot on the chosen date, or pick a time manually below.</p>
+          <div id="fu-picker" style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.4rem;"></div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Chat with Patient</h4>
+          <div class="chat-box" id="chat-box"></div>
+          <div style="display:flex;gap:0.4rem;">
+            <input type="text" id="chat-input" placeholder="Type a message..." style="flex:1;font-size:0.8rem;" />
+            <button class="btn btn-primary btn-sm" id="chat-send">Send</button>
+          </div>
+          <div style="margin-top:0.5rem;">
+            <a class="btn btn-outline btn-sm" id="video-link" href="#" target="_blank">Start Video / Audio Call</a>
+          </div>
+        </div>
+
+        <div class="dt-section">
+          <h4>Review</h4>
+          <div id="review-box"><span style="color:var(--gray-400);font-size:0.8rem;">Loading...</span></div>
+        </div>
+
+        <div class="dt-section">
+          <h4>History (audit)</h4>
+          ${audit}
+        </div>`;
+
+      loadPatientSection(a.userId);
+      renderPrescriptions(a.prescriptions || []);
+      loadChat(a.id);
+      renderReview(a.review);
+      loadFollowUpTimes(a.doctorId, a.appointmentDate);
+
+      document.getElementById('notes-save').addEventListener('click', () => saveNotes(false));
+      document.getElementById('notes-record').addEventListener('click', () => saveNotes(true));
+      document.getElementById('rx-add-row').addEventListener('click', addRxRow);
+      document.getElementById('rx-save').addEventListener('click', savePrescription);
+      document.getElementById('file-upload-btn').addEventListener('click', () => uploadFile(id));
+      document.getElementById('fu-date').addEventListener('change', (e) => loadFollowUpTimes(a.doctorId, e.target.value));
+      document.getElementById('fu-save').addEventListener('click', () => scheduleFollowUp(a));
+      document.getElementById('chat-send').addEventListener('click', sendChat);
+      document.getElementById('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+      document.getElementById('video-link').href = `https://meet.jit.si/MedCare-${encodeURIComponent(id)}`;
+      document.getElementById('video-link').textContent = 'Start Video / Audio Call (Jitsi)';
+      bindRxDel();
+    }
+
+    async function loadPatientSection(userId) {
+      const el = document.getElementById('patient-section');
+      try {
+        const [pr, hh] = await Promise.all([
+          api('/api/patients/' + userId + '/profile'),
+          api('/api/patients/' + userId + '/history'),
+        ]);
+        const prof = await pr.json();
+        const hist = await hh.json();
+        const p = prof.profile || {};
+        const info = [
+          ['DOB', p.dob], ['Gender', p.gender], ['Blood', p.bloodGroup], ['Height', p.height], ['Weight', p.weight],
+          ['Allergies', p.allergies], ['Conditions', p.conditions], ['Current Meds', p.currentMedications],
+        ].filter(([, v]) => v).map(([k, v]) => `<div class="info-item"><div class="k">${esc(k)}</div><div>${esc(v)}</div></div>`).join('');
+        const appts = (hist.appointments || []).map(a => `
+          <div style="font-size:0.78rem;padding:0.3rem 0;border-bottom:1px solid var(--gray-50);">
+            <strong>${a.appointmentDate} ${a.appointmentTime}</strong> — Dr. ${esc(a.doctorName)} <span class="status-badge status-${a.status}">${a.status}</span>
+            ${a.diagnosis ? `<div style="color:var(--gray-500);">Diagnosis: ${esc(a.diagnosis)}</div>` : ''}
+          </div>`).join('');
+        const records = (hist.records || []).map(r => `
+          <div style="font-size:0.78rem;padding:0.3rem 0;border-bottom:1px solid var(--gray-50);">
+            <strong>${esc(r.title)}</strong> <span style="color:var(--gray-400);">${esc(r.createdAt)}</span>
+            ${r.notes ? `<div style="color:var(--gray-500);">${esc(r.notes)}</div>` : ''}
+          </div>`).join('');
+        el.innerHTML = `
+          ${info ? `<div class="info-grid" style="margin-bottom:0.7rem;">${info}</div>` : '<p style="color:var(--gray-400);font-size:0.8rem;">No profile details yet.</p>'}
+          <div style="font-size:0.75rem;color:var(--gray-400);text-transform:uppercase;font-weight:700;margin:0.6rem 0 0.2rem;">Previous Appointments (${(hist.appointments || []).length})</div>
+          ${appts || '<p style="color:var(--gray-400);font-size:0.78rem;">None</p>'}
+          <div style="font-size:0.75rem;color:var(--gray-400);text-transform:uppercase;font-weight:700;margin:0.6rem 0 0.2rem;">Health Records</div>
+          ${records || '<p style="color:var(--gray-400);font-size:0.78rem;">None</p>'}`;
+      } catch {
+        el.innerHTML = '<p style="color:var(--gray-400);font-size:0.8rem;">Could not load patient info.</p>';
+      }
+    }
+
+    async function saveNotes(toRecord) {
+      if (!detailsData) return;
+      const diagnosis = document.getElementById('notes-diagnosis').value.trim();
+      const res = await api('/api/appointments/' + detailsData.id, { method: 'PUT', body: JSON.stringify({ diagnosis }) });
+      if (!res.ok) { const e = await res.json(); showToast(e.error || 'Failed', 'error'); return; }
+      if (toRecord) {
+        await api('/api/patients/' + detailsData.userId + '/records', {
+          method: 'POST',
+          body: JSON.stringify({ title: 'Consultation — ' + detailsData.appointmentDate, notes: diagnosis, appointmentId: detailsData.id }),
+        });
+      }
+      showToast('Notes saved', 'success');
+      refreshList();
+    }
+
+    function renderPrescriptions(list) {
+      const el = document.getElementById('rx-list');
+      if (!list.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div style="font-size:0.75rem;color:var(--gray-400);margin-bottom:0.3rem;">Existing prescriptions</div>' + list.map(rx => `
+        <div style="font-size:0.8rem;padding:0.3rem 0;border-bottom:1px solid var(--gray-50);">
+          <strong>${esc(rx.createdAt)}</strong>
+          ${rx.items.map(i => esc(i.medicine)).join(', ')}
+          <a href="/api/prescriptions/${rx.id}/download" target="_blank" style="margin-left:0.4rem;color:var(--primary);font-size:0.75rem;">Download</a>
+        </div>`).join('');
+    }
+
+    function addRxRow() {
+      const row = document.createElement('div');
+      row.className = 'rx-item-row';
+      row.innerHTML = '<input placeholder="Medicine" data-f="medicine"/><input placeholder="Dosage" data-f="dosage"/><input placeholder="Duration" data-f="duration"/><input placeholder="Instructions" data-f="instructions"/><button type="button" class="btn btn-outline btn-sm rx-del" style="padding:0.2rem 0.5rem;">−</button>';
+      document.getElementById('rx-form').insertBefore(row, document.getElementById('rx-add-row'));
+      bindRxDel();
+    }
+
+    function bindRxDel() {
+      document.querySelectorAll('.rx-del').forEach(b => b.addEventListener('click', () => {
+        const rows = document.querySelectorAll('.rx-item-row');
+        if (rows.length > 1) b.closest('.rx-item-row').remove();
+      }));
+    }
+
+    async function savePrescription() {
+      if (!detailsData) return;
+      const items = Array.from(document.querySelectorAll('.rx-item-row')).map(row => {
+        const obj = {};
+        row.querySelectorAll('[data-f]').forEach(inp => obj[inp.dataset.f] = inp.value.trim());
+        return obj;
+      }).filter(i => i.medicine);
+      if (!items.length) return showToast('Add at least one medicine', 'error');
+      const res = await api('/api/prescriptions', {
+        method: 'POST',
+        body: JSON.stringify({ appointmentId: detailsData.id, notes: document.getElementById('rx-notes').value.trim(), items }),
+      });
+      if (res.ok) {
+        showToast('Prescription created', 'success');
+        const r = await api('/api/appointments/' + detailsData.id);
+        const a = await r.json();
+        renderPrescriptions(a.prescriptions || []);
+        document.getElementById('rx-notes').value = '';
+        Array.from(document.querySelectorAll('.rx-item-row')).forEach((row, i) => { if (i > 0) row.remove(); row.querySelectorAll('[data-f]').forEach(inp => inp.value = ''); });
+      } else { const e = await res.json(); showToast(e.error || 'Failed', 'error'); }
+    }
+
+    async function uploadFile(id) {
+      const file = document.getElementById('file-upload').files[0];
+      if (!file) return showToast('Choose a file first', 'error');
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', document.getElementById('file-category').value);
+      const r = await api(`/api/appointments/${id}/attachments`, { method: 'POST', body: fd });
+      if (r.ok) { showToast('File uploaded'); document.getElementById('file-upload').value = ''; await openDetails(id); }
+      else { const e = await r.json(); showToast(e.error || 'Upload failed', 'error'); }
+    }
+
+    async function loadFollowUpTimes(doctorId, date) {
+      const picker = document.getElementById('fu-picker');
+      const select = document.getElementById('fu-time');
+      if (!picker || !select) return;
+      select.innerHTML = '<option value="">Select time</option>';
+      picker.innerHTML = '';
+      if (!date) return;
+      const res = await api(`/api/doctors/${encodeURIComponent(doctorId)}/availability?date=${encodeURIComponent(date)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      (data.slots || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.time;
+        opt.textContent = s.time;
+        select.appendChild(opt);
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'time-chip';
+        chip.textContent = s.time;
+        chip.addEventListener('click', () => { select.value = s.time; picker.querySelectorAll('.time-chip').forEach(c => c.classList.remove('selected')); chip.classList.add('selected'); });
+        picker.appendChild(chip);
+      });
+    }
+
+    async function scheduleFollowUp(a) {
+      const date = document.getElementById('fu-date').value;
+      const time = document.getElementById('fu-time').value;
+      if (!date || !time) return showToast('Pick a date and time for the follow-up', 'error');
+      const res = await api(`/api/appointments/${a.id}/follow-up`, { method: 'POST', body: JSON.stringify({ date, time }) });
+      if (res.ok) { showToast('Follow-up scheduled', 'success'); await openDetails(a.id); refreshList(); }
+      else { const e = await res.json(); showToast(e.error || 'Failed', 'error'); }
+    }
+
+    // ─── Chat ──────────────────────────────────────────
+    async function loadChat(id) {
+      const box = document.getElementById('chat-box');
+      if (!box) return;
+      const res = await api('/api/messages/appointment/' + id);
+      if (!res.ok) { box.innerHTML = '<p style="color:var(--gray-400);font-size:0.78rem;">Chat unavailable.</p>'; return; }
+      const msgs = await res.json();
+      box.innerHTML = msgs.map(m => `
+        <div class="chat-msg ${m.senderId === (user?.id) ? 'mine' : 'other'}">
+          <div class="who">${esc(m.senderName)}</div>${esc(m.body)}
+        </div>`).join('') || '<p style="color:var(--gray-400);font-size:0.78rem;">No messages yet.</p>';
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const body = input.value.trim();
+      if (!body || !detailsData) return;
+      const res = await api('/api/messages', { method: 'POST', body: JSON.stringify({ appointmentId: detailsData.id, body }) });
+      if (res.ok) { input.value = ''; await loadChat(detailsData.id); }
+      else { const e = await res.json(); showToast(e.error || 'Failed', 'error'); }
+    }
+
+    function renderReview(review) {
+      const el = document.getElementById('review-box');
+      if (!el) return;
+      if (!review) { el.innerHTML = '<span style="color:var(--gray-400);font-size:0.8rem;">No feedback yet from this patient.</span>'; return; }
+      const stars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
+      el.innerHTML = `<span style="color:#f59e0b;">${stars}</span> <strong>${review.rating}/5</strong>
+        ${review.comment ? `<div style="font-size:0.8rem;color:var(--gray-600);margin-top:0.3rem;">${esc(review.comment)}</div>` : ''}
+        <div style="font-size:0.72rem;color:var(--gray-400);">${esc(review.createdAt)}</div>`;
+    }
+
+    document.getElementById('dt-close').addEventListener('click', () => detailsModal.classList.remove('open'));
+    detailsModal.addEventListener('click', (e) => { if (e.target === detailsModal) { detailsModal.classList.remove('open'); if (chatTimer) clearInterval(chatTimer); } });
+    document.getElementById('dt-accept').addEventListener('click', async () => { const id = detailsModal.dataset.id; detailsModal.classList.remove('open'); await changeStatus(id, 'accepted'); });
+    document.getElementById('dt-reject').addEventListener('click', async () => { const id = detailsModal.dataset.id; detailsModal.classList.remove('open'); await changeStatus(id, 'rejected'); });
+    document.getElementById('dt-complete').addEventListener('click', async () => { const id = detailsModal.dataset.id; detailsModal.classList.remove('open'); await changeStatus(id, 'completed'); });
+    document.getElementById('dt-cancel').addEventListener('click', async () => { const id = detailsModal.dataset.id; detailsModal.classList.remove('open'); await changeStatus(id, 'cancelled'); });
+    document.getElementById('dt-reschedule').addEventListener('click', () => {
+      if (!detailsData) return;
+      document.getElementById('resched-date').value = detailsData.appointmentDate;
+      document.getElementById('resched-modal').dataset.id = detailsData.id;
+      loadReschedTimes(detailsData.doctorId, detailsData.appointmentDate);
+      reschedModal.classList.add('open');
+    });
+
+    async function loadReschedTimes(doctorId, date) {
+      const picker = document.getElementById('resched-picker');
+      picker.innerHTML = '<div class="loading-wrap"><div class="spinner"></div></div>';
+      const res = await api(`/api/doctors/${encodeURIComponent(doctorId)}/availability?date=${encodeURIComponent(date)}`);
+      picker.innerHTML = '';
+      if (!res.ok) return;
+      const data = await res.json();
+      (data.slots || []).forEach(s => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'time-chip';
+        chip.textContent = s.time;
+        chip.addEventListener('click', () => {
+          document.getElementById('resched-time').value = s.time;
+          picker.querySelectorAll('.time-chip').forEach(c => c.classList.remove('selected'));
+          chip.classList.add('selected');
+        });
+        picker.appendChild(chip);
+      });
+      if (!(data.slots || []).length) picker.innerHTML = '<span style="color:var(--gray-400);font-size:0.8rem;">No free slots on this date.</span>';
+    }
+    document.getElementById('resched-date').addEventListener('change', (e) => {
+      loadReschedTimes(detailsData.doctorId, e.target.value);
+    });
+    document.getElementById('resched-cancel').addEventListener('click', () => reschedModal.classList.remove('open'));
+    reschedModal.addEventListener('click', (e) => { if (e.target === reschedModal) reschedModal.classList.remove('open'); });
+    document.getElementById('resched-save').addEventListener('click', async () => {
+      const date = document.getElementById('resched-date').value;
+      const time = document.getElementById('resched-time').value;
+      if (!date || !time) return showToast('Pick a new date and time', 'error');
+      const id = reschedModal.dataset.id;
+      const res = await api('/api/appointments/' + id, { method: 'PUT', body: JSON.stringify({ appointmentDate: date, appointmentTime: time }) });
+      if (res.ok) { showToast('Appointment rescheduled', 'success'); reschedModal.classList.remove('open'); await openDetails(id); refreshList(); }
+      else { const e = await res.json(); showToast(e.error || 'Failed', 'error'); }
+    });
+
+    // ─── Filters ───────────────────────────────────────
+    document.getElementById('filter-apply').addEventListener('click', () => { page = 1; refreshList(); });
+    document.getElementById('filter-clear').addEventListener('click', () => {
+      ['filter-search', 'filter-status', 'filter-priority', 'filter-date-from', 'filter-date-to'].forEach(id => document.getElementById(id).value = '');
+      page = 1; refreshList();
+    });
+  </script>
+</body>
+</html>

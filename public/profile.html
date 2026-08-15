@@ -8,7 +8,7 @@
   <style>
     .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
     @media (max-width: 700px) { .profile-grid { grid-template-columns: 1fr; } }
-    .role-badge { display: inline-block; padding: 0.2rem 0.65rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 600; text-transform: capitalize; background: var(--primary-light); color: var(--primary); }
+    .role-badge { display: inline-block; padding: 0.18rem 0.6rem; border-radius: var(--radius-full); font-family: var(--font-mono); font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; background: var(--foam); color: var(--pine-deep); border: 1px solid #BFE4CF; }
   </style>
 </head>
 <body>
@@ -22,6 +22,7 @@
       <a href="/medications.html">Medications</a>
       <a href="/profile.html" id="profile-link">Profile</a>
       <a href="/login.html" id="login-link">Login</a>
+      <a href="/doctor.html" id="doctor-link" style="display:none;">Doctor</a>
       <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
       <a href="#" id="logout-link" style="display:none;">Logout</a>
     </div>
@@ -66,9 +67,10 @@
   <div id="toast" class="toast"></div>
 
   <script type="module">
-    import { getUser, clearAuth, isLoggedIn, isAdmin, api, setupNav, esc, showToast } from './common.js';
+    import { getUser, clearAuth, isLoggedIn, isAdmin, isDoctor, api, setupNav, esc, showToast } from './common.js';
 
     if (!isLoggedIn()) window.location.href = '/login.html';
+    if (isDoctor()) window.location.href = '/doctor.html';
 
     setupNav('/profile.html');
 

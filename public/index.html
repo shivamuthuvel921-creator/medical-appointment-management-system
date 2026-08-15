@@ -7,20 +7,9 @@
   <link rel="stylesheet" href="/styles.css" />
   <style>
     .specialties-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
-    .specialty-item { padding: 0.8rem; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 0.85rem; }
-    .specialty-item strong { color: var(--primary); }
-    .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
-    .filter-bar input, .filter-bar select { padding: 0.4rem 0.6rem; font-size: 0.8rem; min-width: 120px; flex: 1; }
-    .filter-bar .btn { flex: 0; }
-    .appointment-cards { display: grid; gap: 0.75rem; }
-    .appt-card { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 1rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: start; transition: border-color var(--transition), box-shadow var(--transition); }
-    .appt-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
-    .appt-info { display: grid; gap: 0.25rem; }
-    .appt-info .name { font-weight: 700; color: var(--gray-800); }
-    .appt-info .meta { font-size: 0.8rem; color: var(--gray-500); }
-    .appt-info .meta span { margin-right: 0.75rem; }
-    .appt-actions { display: flex; gap: 0.4rem; align-items: center; }
-    .export-link { margin-left: auto; font-size: 0.8rem; color: var(--primary); text-decoration: none; font-weight: 600; }
+    .specialty-item { padding: 0.85rem 0.95rem; background: var(--surface); border: 1px solid var(--hairline); border-left: 3px solid var(--pulse); border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--muted); transition: border-color var(--transition), box-shadow var(--transition); }
+    .specialty-item:hover { border-color: var(--pine); box-shadow: var(--shadow-md); }
+    .specialty-item strong { font-family: var(--font-display); color: var(--ink); }
     @media (max-width: 500px) {
       .appt-card { grid-template-columns: 1fr; }
       .appt-actions { justify-content: flex-end; }
@@ -41,6 +30,7 @@
       <a href="/medications.html">Medications</a>
       <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
       <a href="/login.html" id="login-link">Login</a>
+      <a href="/doctor.html" id="doctor-link" style="display:none;">Doctor</a>
       <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
       <a href="#" id="logout-link" style="display:none;">Logout</a>
     </div>
@@ -70,8 +60,9 @@
           <select name="doctorName" id="doctor-select" required>
             <option value="">Select a doctor...</option>
           </select>
-          <input type="date" name="appointmentDate" required />
-          <input type="time" name="appointmentTime" required />
+          <input type="date" name="appointmentDate" id="appointment-date" required />
+          <input type="time" name="appointmentTime" id="appointment-time" required />
+          <div class="time-picker" id="time-picker"></div>
           <textarea name="notes" placeholder="Notes (optional)"></textarea>
           <select name="status">
             <option value="scheduled">Scheduled</option>
@@ -128,6 +119,7 @@
         <select name="doctorName" id="edit-doctorName" required></select>
         <input type="date" name="appointmentDate" id="edit-appointmentDate" required />
         <input type="time" name="appointmentTime" id="edit-appointmentTime" required />
+        <div class="time-picker" id="edit-time-picker"></div>
         <textarea name="notes" id="edit-notes" placeholder="Notes (optional)"></textarea>
         <select name="status" id="edit-status">
           <option value="scheduled">Scheduled</option>
@@ -182,6 +174,53 @@
         editDoctorSelect.innerHTML = '<option value="">Select a doctor...</option>' + opts;
       } catch {}
     }
+
+    async function loadAvailability(doctorId, date, picker, timeInput) {
+      picker.innerHTML = '';
+      if (!doctorId || !date) return;
+      picker.innerHTML = '<div class="loading-wrap" style="padding:0.2rem 0;"><div class="spinner"></div></div>';
+      try {
+        const res = await api(`/api/doctors/${encodeURIComponent(doctorId)}/availability?date=${encodeURIComponent(date)}`);
+        if (!res.ok) {
+          const err = await res.json();
+          picker.innerHTML = `<div class="time-picker-note">${esc(err.error || 'Could not load availability')}</div>`;
+          return;
+        }
+        const data = await res.json();
+        if (!data.slots || data.slots.length === 0) {
+          picker.innerHTML = '<div class="time-picker-note">No free slots on this day. Try another date.</div>';
+          return;
+        }
+        picker.innerHTML = '';
+        data.slots.forEach(s => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'time-chip';
+          chip.textContent = s.time;
+          chip.addEventListener('click', () => {
+            timeInput.value = s.time;
+            picker.querySelectorAll('.time-chip').forEach(c => c.classList.remove('selected'));
+            chip.classList.add('selected');
+          });
+          picker.appendChild(chip);
+        });
+      } catch {
+        picker.innerHTML = '';
+      }
+    }
+
+    doctorSelect.addEventListener('change', () => {
+      loadAvailability(doctorSelect.value, document.getElementById('appointment-date').value, document.getElementById('time-picker'), document.getElementById('appointment-time'));
+    });
+    document.getElementById('appointment-date').addEventListener('change', (e) => {
+      loadAvailability(doctorSelect.value, e.target.value, document.getElementById('time-picker'), document.getElementById('appointment-time'));
+    });
+    editDoctorSelect.addEventListener('change', () => {
+      loadAvailability(editDoctorSelect.value, document.getElementById('edit-appointmentDate').value, document.getElementById('edit-time-picker'), document.getElementById('edit-appointmentTime'));
+    });
+    document.getElementById('edit-appointmentDate').addEventListener('change', (e) => {
+      loadAvailability(editDoctorSelect.value, e.target.value, document.getElementById('edit-time-picker'), document.getElementById('edit-appointmentTime'));
+    });
 
     async function loadAppointments(filters, page) {
       list.innerHTML = '<div class="loading-wrap"><div class="spinner"></div>Loading appointments...</div>';
@@ -265,6 +304,7 @@
         document.getElementById('edit-status').value = a.status;
         renderAttachments(a.attachments || []);
         editModal.classList.add('open');
+        loadAvailability(editDoctorSelect.value, a.appointmentDate, document.getElementById('edit-time-picker'), document.getElementById('edit-appointmentTime'));
       } catch {
         showToast('Network error', 'error');
       }

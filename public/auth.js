@@ -32,6 +32,11 @@ export function isAdmin() {
   return user && user.role === 'admin';
 }
 
+export function isDoctor() {
+  const user = getUser();
+  return user && user.role === 'doctor';
+}
+
 export function requireAuth() {
   if (!isLoggedIn()) {
     window.location.href = '/login.html';

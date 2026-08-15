@@ -11,6 +11,12 @@ import appointmentRoutes from './routes/appointments.js';
 import userRoutes from './routes/users.js';
 import symptomRoutes from './routes/symptoms.js';
 import medicationRoutes from './routes/medications.js';
+import adminRoutes from './routes/admin.js';
+import patientRoutes from './routes/patients.js';
+import prescriptionRoutes from './routes/prescriptions.js';
+import reviewRoutes from './routes/reviews.js';
+import messageRoutes from './routes/messages.js';
+import notificationRoutes from './routes/notifications.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -31,7 +37,7 @@ const authLimiter = rateLimit({
 });
 
 app.get('/', (_req, res) => {
-  res.sendFile(join(__dirname, 'public', 'home.html'));
+  res.sendFile(join(__dirname, 'public', 'medcare.html'));
 });
 
 app.use(express.static(join(__dirname, 'public')));
@@ -47,6 +53,12 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/symptoms', symptomRoutes);
 app.use('/api/medications', medicationRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/patients', patientRoutes);
+app.use('/api/prescriptions', prescriptionRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/api/stats', authenticate, (req, res) => {
   const stats = getAppointmentStats(req.user, req.query.doctorId);

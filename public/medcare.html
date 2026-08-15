@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0B1F3A" />
+<meta name="description" content="MedCare — Smart Medical Appointment Scheduling System. Book appointments, manage prescriptions and track your health." />
+<title>MedCare — Smart Medical Appointment Scheduling System</title>
+<script>
+  // Apply the saved/auto theme before first paint to avoid a light-mode flash.
+  (function () {
+    try {
+      var mode = localStorage.getItem('medcare-theme-mode') || 'auto';
+      if (mode !== 'auto') {
+        var legacy = localStorage.getItem('medcare-theme');
+        if (legacy === 'light' || legacy === 'dark') mode = legacy;
+      }
+      var hour = new Date().getHours();
+      var theme = mode === 'light' ? 'light' : mode === 'dark' ? 'dark' : (hour >= 6 && hour < 18 ? 'light' : 'dark');
+      document.documentElement.dataset.theme = theme;
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/medcare/style.css" />
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Floating gradient background -->
+  <div class="bg-blobs" aria-hidden="true">
+    <div class="blob blob-a"></div>
+    <div class="blob blob-b"></div>
+    <div class="blob blob-c"></div>
+  </div>
+
+  <!-- ══════════ SIDEBAR ══════════ -->
+  <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+    <div class="sidebar-brand">
+      <a class="brand" href="#/dashboard" data-nav>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">MedCare</span>
+          <span class="brand-tag">Appointment Suite</span>
+        </span>
+      </a>
+      <button class="icon-btn sidebar-collapse" id="sidebarCollapse" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar-search" id="sidebarSearch">
+      <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input type="text" id="sidebarSearchInput" placeholder="Quick search..." aria-label="Search pages" />
+    </div>
+
+    <nav class="sidebar-nav" id="sidebarNav" aria-label="Sections"></nav>
+
+    <div class="sidebar-footer">
+      <div class="mode-pill" id="modePill">
+        <button class="icon-btn" id="themeToggle" title="Theme: Auto. Click to cycle Auto, Light or Dark" aria-label="Theme mode: Auto. Click to cycle Auto, Light or Dark"></button>
+        <div class="mode-pill-text">
+          <span id="modeLabel">Light mode</span>
+          <span class="api-status" id="apiStatus"><span class="dot"></span>Demo data</span>
+        </div>
+      </div>
+      <div class="sidebar-user" id="sidebarUser">
+        <div class="avatar" id="sidebarAvatar"></div>
+        <div class="sidebar-user-meta">
+          <strong id="sidebarUserName">Guest</strong>
+          <span id="sidebarUserRole">Not signed in</span>
+        </div>
+        <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══════════ MAIN COLUMN ══════════ -->
+  <div class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="icon-btn topbar-menu-btn" id="menuBtn" aria-label="Toggle navigation menu">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+
+      <div class="topbar-search" id="topbarSearch">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input type="text" id="globalSearch" placeholder="Search doctors, appointments, medicines..." aria-label="Global search" autocomplete="off" />
+        <span class="search-kbd">/</span>
+        <div class="search-results" id="searchResults" hidden></div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="icon-btn topbar-btn" id="helpBtn" title="Help center" aria-label="Help center">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.8.3-1.4 1-1.4 1.9V14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1" fill="currentColor"/></svg>
+        </button>
+
+        <button class="icon-btn topbar-btn msg-btn" id="messagesBtn" title="Messages" aria-label="Messages">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="badge-dot" id="msgBadge" hidden></span>
+        </button>
+
+        <button class="icon-btn topbar-btn" id="notifBtn" title="Notifications" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="badge-dot" id="notifBadge" hidden></span>
+        </button>
+
+        <button class="icon-btn topbar-btn" id="themeToggleTop" title="Theme: Auto. Click to cycle Auto, Light or Dark" aria-label="Theme mode: Auto. Click to cycle Auto, Light or Dark">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+
+        <div class="profile-pop">
+          <button class="profile-trigger" id="profileTrigger" aria-haspopup="menu" aria-expanded="false">
+            <span class="profile-trigger-meta">
+              <strong id="topUserName">Guest</strong>
+              <small id="topUserRole">Not signed in</small>
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" class="chev"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="dropdown" id="profileDropdown" role="menu" hidden>
+            <div class="dropdown-head">
+              <span class="avatar" id="dropAvatar"></span>
+              <div><strong id="dropName">Guest</strong><small id="dropEmail">—</small></div>
+            </div>
+            <div class="dropdown-item" data-navto="#/profile"><span class="di">👤</span> My profile</div>
+            <div class="dropdown-item" data-navto="#/settings"><span class="di">⚙️</span> Settings</div>
+            <div class="dropdown-item" data-navto="#/notifications"><span class="di">🔔</span> Notifications</div>
+            <div class="dropdown-item" data-navto="#/analytics"><span class="di">📊</span> Analytics</div>
+            <div class="dropdown-sep"></div>
+            <div class="dropdown-item danger" id="dropdownLogout"><span class="di">🚪</span> Log out</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page viewport -->
+    <main class="viewport" id="viewport" aria-live="polite"></main>
+
+    <!-- Mobile bottom navigation -->
+    <nav class="bottom-nav" id="bottomNav" aria-label="Mobile navigation"></nav>
+
+    <!-- Floating action button (mobile menu) -->
+    <button class="fab" id="fab" title="Open navigation menu" aria-label="Open navigation menu">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <!-- ══════════ OVERLAYS ══════════ -->
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal" id="modalBox" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <div class="drawer-overlay" id="drawerOverlay" hidden>
+    <div class="drawer" id="drawerBox" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <div class="tour-tip" id="tourTip" hidden></div>
+</div>
+
+<script type="module" src="/medcare/js/main.js"></script>
+</body>
+</html>

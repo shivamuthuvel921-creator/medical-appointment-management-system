@@ -45,12 +45,67 @@ export async function sendAppointmentCreatedEmail(user, appointment) {
   });
 }
 
+export async function sendAppointmentBookedDoctorEmail(doctor, appointment) {
+  return sendMail({
+    to: doctor.email,
+    subject: 'New appointment booked — MedCare',
+    text: `Hi Dr. ${doctor.name},\n\nYou have a new appointment with ${appointment.patientName} on ${appointment.appointmentDate} at ${appointment.appointmentTime}.\nMedication: ${appointment.medication}\nNotes: ${appointment.notes || 'None'}\n\n— MedCare`,
+    html: `<p>Hi <strong>Dr. ${doctor.name}</strong>,</p><p>You have a new appointment with <strong>${appointment.patientName}</strong> on <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong>.</p><p>Medication: ${appointment.medication}<br/>Notes: ${appointment.notes || 'None'}</p><p>— MedCare</p>`,
+  });
+}
+
 export async function sendAppointmentCancelledEmail(user, appointment) {
   return sendMail({
     to: user.email,
     subject: 'Appointment cancelled — MedCare',
     text: `Hi ${user.name},\n\nYour appointment with Dr. ${appointment.doctorName} on ${appointment.appointmentDate} at ${appointment.appointmentTime} has been cancelled.\n\n— MedCare`,
     html: `<p>Hi <strong>${user.name}</strong>,</p><p>Your appointment with <strong>Dr. ${appointment.doctorName}</strong> on <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong> has been cancelled.</p><p>— MedCare</p>`,
+  });
+}
+
+export async function sendAppointmentStatusEmail(user, appointment, status) {
+  const label = status === 'confirmed' ? 'confirmed' : 'rejected';
+  const heading = status === 'confirmed' ? 'Your appointment has been confirmed' : 'Your appointment was not accepted';
+  const text = status === 'confirmed'
+    ? `Hi ${user.name},\n\nYour appointment with Dr. ${appointment.doctorName} on ${appointment.appointmentDate} at ${appointment.appointmentTime} has been confirmed by the doctor.\n\n— MedCare`
+    : `Hi ${user.name},\n\nUnfortunately your appointment with Dr. ${appointment.doctorName} on ${appointment.appointmentDate} at ${appointment.appointmentTime} was not accepted. Please book another time.\n\n— MedCare`;
+  const html = `<p>Hi <strong>${user.name}</strong>,</p><p>${heading} (<strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong>, Dr. ${appointment.doctorName}).</p>${status !== 'confirmed' ? '<p>Please book another time slot.</p>' : ''}<p>— MedCare</p>`;
+  return sendMail({ to: user.email, subject: `Appointment ${label} — MedCare`, text, html });
+}
+
+export async function sendAppointmentRescheduledEmail(user, appointment) {
+  return sendMail({
+    to: user.email,
+    subject: 'Appointment rescheduled — MedCare',
+    text: `Hi ${user.name},\n\nYour appointment with Dr. ${appointment.doctorName} has been rescheduled to ${appointment.appointmentDate} at ${appointment.appointmentTime}.\n\n— MedCare`,
+    html: `<p>Hi <strong>${user.name}</strong>,</p><p>Your appointment with <strong>Dr. ${appointment.doctorName}</strong> has been rescheduled to <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong>.</p><p>— MedCare</p>`,
+  });
+}
+
+export async function sendAppointmentCancelledDoctorEmail(doctor, appointment) {
+  return sendMail({
+    to: doctor.email,
+    subject: 'Appointment cancelled — MedCare',
+    text: `Hi Dr. ${doctor.name},\n\nYour appointment with ${appointment.patientName} on ${appointment.appointmentDate} at ${appointment.appointmentTime} has been cancelled.\n\n— MedCare`,
+    html: `<p>Hi <strong>Dr. ${doctor.name}</strong>,</p><p>Your appointment with <strong>${appointment.patientName}</strong> on <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong> has been cancelled.</p><p>— MedCare</p>`,
+  });
+}
+
+export async function sendAppointmentRescheduledDoctorEmail(doctor, appointment) {
+  return sendMail({
+    to: doctor.email,
+    subject: 'Appointment rescheduled — MedCare',
+    text: `Hi Dr. ${doctor.name},\n\nYour appointment with ${appointment.patientName} has been rescheduled to ${appointment.appointmentDate} at ${appointment.appointmentTime}.\n\n— MedCare`,
+    html: `<p>Hi <strong>Dr. ${doctor.name}</strong>,</p><p>Your appointment with <strong>${appointment.patientName}</strong> has been rescheduled to <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong>.</p><p>— MedCare</p>`,
+  });
+}
+
+export async function sendAppointmentFollowUpEmail(user, appointment) {
+  return sendMail({
+    to: user.email,
+    subject: 'Follow-up appointment scheduled — MedCare',
+    text: `Hi ${user.name},\n\nA follow-up appointment with Dr. ${appointment.doctorName} has been scheduled for ${appointment.appointmentDate} at ${appointment.appointmentTime}.\n\n— MedCare`,
+    html: `<p>Hi <strong>${user.name}</strong>,</p><p>A follow-up appointment with <strong>Dr. ${appointment.doctorName}</strong> has been scheduled for <strong>${appointment.appointmentDate} at ${appointment.appointmentTime}</strong>.</p><p>— MedCare</p>`,
   });
 }
 

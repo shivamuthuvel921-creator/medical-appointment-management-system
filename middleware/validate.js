@@ -2,10 +2,16 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export const APPOINTMENT_STATUSES = ['scheduled', 'completed', 'cancelled'];
+export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'rejected', 'completed', 'cancelled'];
+
+export const PRIORITIES = ['normal', 'emergency'];
+
+export const QUEUE_STATUSES = ['waiting', 'called', 'in_consultation', 'completed', 'cancelled'];
 
 export const ALLOWED_TRANSITIONS = {
-  scheduled: ['completed', 'cancelled'],
+  scheduled: ['confirmed', 'rejected', 'cancelled'],
+  confirmed: ['completed', 'cancelled'],
+  rejected: ['scheduled'],
   completed: ['cancelled'],
   cancelled: ['scheduled'],
 };

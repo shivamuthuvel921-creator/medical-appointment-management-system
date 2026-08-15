@@ -6,28 +6,18 @@
   <title>Home — MedCare</title>
   <link rel="stylesheet" href="/styles.css" />
   <style>
-    .welcome-badge { display: inline-block; margin-bottom: 0.75rem; padding: 0.35rem 0.75rem; background: var(--primary-light); color: var(--primary); border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 700; }
-    .hero-heading { font-size: 1.6rem; color: var(--primary); font-weight: 800; line-height: 1.3; margin-bottom: 0.6rem; }
-    .hero-text { color: var(--gray-500); line-height: 1.7; font-size: 0.9rem; max-width: 480px; }
-    .hero-btns { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.2rem; }
+    .hero-heading { font-family: var(--font-display); font-size: clamp(1.6rem, 4vw, 2.35rem); color: var(--ink); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 0.6rem; }
+    .hero-text { color: var(--muted); line-height: 1.7; font-size: 0.94rem; max-width: 480px; }
+    .hero-btns { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.3rem; }
     .hero-content { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1.5rem; align-items: start; }
-    .hero-right { background: linear-gradient(135deg, var(--primary-light), #d8f0df); padding: 1.2rem; border-radius: var(--radius); display: grid; gap: 0.75rem; }
-    .info-card { background: white; border-radius: var(--radius-sm); padding: 0.9rem; box-shadow: var(--shadow); }
-    .info-card strong { color: var(--primary); display: block; margin-bottom: 0.15rem; }
-    .info-card p { font-size: 0.8rem; color: var(--gray-500); margin: 0; }
-
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1.5rem; }
-    .stat-card { background: white; border-radius: var(--radius-sm); padding: 1.2rem; text-align: center; box-shadow: var(--shadow); border: 1px solid var(--gray-100); }
-    .stat-card .num { font-size: 1.8rem; font-weight: 800; color: var(--primary); }
-    .stat-card .label { font-size: 0.75rem; color: var(--gray-400); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.15rem; }
-    .stat-card.cancelled .num { color: var(--danger); }
-    .stat-card.completed .num { color: #15803d; }
-    .stat-card.today .num { color: #1d4ed8; }
+    .hero-right { background: linear-gradient(150deg, var(--foam), #EAF4EF); border: 1px solid var(--hairline); padding: 1.2rem; border-radius: var(--radius); display: grid; gap: 0.75rem; }
+    .info-card { background: var(--surface); border: 1px solid var(--hairline); border-left: 3px solid var(--pulse); border-radius: var(--radius-sm); padding: 0.9rem 1rem; box-shadow: var(--shadow); }
+    .info-card strong { font-family: var(--font-display); color: var(--ink); display: block; margin-bottom: 0.15rem; }
+    .info-card p { font-size: 0.8rem; color: var(--muted); margin: 0; }
 
     @media (max-width: 700px) {
       .hero-content { grid-template-columns: 1fr; }
-      .hero-heading { font-size: 1.3rem; }
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .hero-heading { font-size: 1.45rem; }
     }
   </style>
 </head>
@@ -42,6 +32,7 @@
       <a href="/medications.html">Medications</a>
       <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
       <a href="/login.html" id="login-link">Login</a>
+      <a href="/doctor.html" id="doctor-link" style="display:none;">Doctor</a>
       <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
       <a href="#" id="logout-link" style="display:none;">Logout</a>
     </div>
@@ -55,7 +46,7 @@
           <h1 class="hero-heading">Medication appointments made easy</h1>
           <p class="hero-text">Manage medication consultations, book appointments, and keep every visit organized.</p>
           <div class="hero-btns">
-            <a class="btn btn-primary" href="/booking.html">Book Appointment</a>
+            <a class="btn btn-primary" href="/booking.html" id="home-book-btn">Book Appointment</a>
             <a class="btn btn-outline" href="/doctor-details.html">Our Doctors</a>
           </div>
         </div>
@@ -88,10 +79,15 @@
   </div>
 
   <script type="module">
-    import { getUser, isLoggedIn, isAdmin, api, setupNav, renderBarChart, renderLineChart } from './common.js';
+    import { getUser, isLoggedIn, isAdmin, isDoctor, api, setupNav, renderBarChart, renderLineChart } from './common.js';
 
     const banner = document.getElementById('welcome-banner');
     setupNav('/home.html');
+
+    if (isDoctor()) {
+      const bookBtn = document.getElementById('home-book-btn');
+      if (bookBtn) bookBtn.style.display = 'none';
+    }
 
     if (isLoggedIn()) {
       const user = getUser();

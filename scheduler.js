@@ -13,6 +13,8 @@ export function createAppointment(input) {
     appointmentTime,
     notes: input.notes?.trim() || '',
     status: input.status?.trim() || 'scheduled',
+    priority: input.priority?.trim() || 'normal',
+    type: input.type?.trim() || 'In-clinic',
   };
 }
 

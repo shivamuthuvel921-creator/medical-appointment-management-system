@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doctor Portal — MedCare</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .stats-grid { grid-template-columns: repeat(6, 1fr); margin: 1.2rem 0; }
+    @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 500px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    .chart-wrap { margin-bottom: 1.5rem; }
+    .actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    .slot-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.4rem; align-items: end; }
+    .slot-form input, .slot-form select { padding: 0.4rem 0.55rem; font-size: 0.8rem; }
+    @media (max-width: 600px) { .slot-form { grid-template-columns: 1fr 1fr; } }
+    .doctor-hero { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .doctor-hero img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 2px solid var(--foam); background: var(--foam); }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="topbar-brand">MedCare</span>
+    <div class="topbar-links">
+      <a href="/home.html">Home</a>
+      <a href="/booking.html">Book Visit</a>
+      <a href="/doctor-details.html">Doctors</a>
+      <a href="/calendar.html">Calendar</a>
+      <a href="/medications.html">Medications</a>
+      <a href="/doctor.html">Doctor Portal</a>
+      <a href="/doctor-appointments.html">Appointments</a>
+      <a href="/profile.html" id="profile-link" style="display:none;">Profile</a>
+      <a href="/admin.html" id="admin-link" style="display:none;">Admin</a>
+      <a href="#" id="logout-link" style="display:none;">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div class="doctor-hero">
+        <img id="avatar-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' fill='%23E1F3EA'/%3E%3Ccircle cx='48' cy='38' r='17' fill='%230E6B4D'/%3E%3Cpath d='M48 66c-13 0-22 8-24 16h48c-2-8-11-16-24-16z' fill='%230E6B4D'/%3E%3C/svg%3E" alt="Profile" />
+        <div>
+          <h1 id="doctor-name">Doctor Portal</h1>
+          <p id="doctor-greeting">Your practice at a glance.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card"><div class="num" id="st-total">—</div><div class="label">Total</div></div>
+      <div class="stat-card today"><div class="num" id="st-today">—</div><div class="label">Today</div></div>
+      <div class="stat-card"><div class="num" id="st-scheduled">—</div><div class="label">Scheduled</div></div>
+      <div class="stat-card completed"><div class="num" id="st-completed">—</div><div class="label">Completed</div></div>
+      <div class="stat-card cancelled"><div class="num" id="st-cancelled">—</div><div class="label">Cancelled</div></div>
+      <div class="stat-card missed"><div class="num" id="st-missed">—</div><div class="label">Missed</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h2>Consultation Reports &amp; Earnings</h2>
+      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="stat-card"><div class="num" id="rp-today">—</div><div class="label">Consultations Today</div></div>
+        <div class="stat-card"><div class="num" id="rp-week">—</div><div class="label">This Week</div></div>
+        <div class="stat-card"><div class="num" id="rp-month">—</div><div class="label">This Month</div></div>
+        <div class="stat-card today"><div class="num" id="rp-earnings">—</div><div class="label">Est. Earnings (Month)</div></div>
+      </div>
+      <div class="chart-wrap" style="margin-top:1rem;">
+        <div class="chart-box"><h3>Daily Consultations (30 days)</h3><div id="chart-daily"></div></div>
+        <div class="chart-box"><h3>Monthly Consultations</h3><div id="chart-monthly"></div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h2>Today's Queue</h2>
+      <div id="queue-list"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Availability &amp; Working Hours</h2>
+        <div id="doctor-slot-list"></div>
+        <div class="slot-form" style="margin-top:0.75rem;">
+          <select id="doctor-slot-day">
+            <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+            <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+          <input type="time" id="doctor-slot-start" title="Start time" />
+          <input type="time" id="doctor-slot-end" title="End time" />
+          <button class="btn btn-primary btn-sm" id="doctor-slot-add">Add</button>
+        </div>
+
+        <h2 style="margin-top:1.4rem;">Blocked Slots (leave, meetings, emergencies)</h2>
+        <div id="doctor-block-list"></div>
+        <div class="slot-form" style="margin-top:0.75rem;">
+          <input type="date" id="doctor-block-date" title="Date" />
+          <input type="time" id="doctor-block-start" title="Start (optional)" />
+          <input type="time" id="doctor-block-end" title="End (optional)" />
+          <button class="btn btn-danger btn-sm" id="doctor-block-add">Block</button>
+        </div>
+        <input type="text" id="doctor-block-reason" placeholder="Reason (optional)" style="width:100%;margin-top:0.4rem;" />
+        <p style="font-size:0.75rem;color:var(--gray-400);margin-top:0.5rem;">Patients can book 30-minute slots within your working hours, minus blocked days.</p>
+      </div>
+
+      <div class="card">
+        <h2>Profile &amp; Practice Info</h2>
+        <form id="doctor-profile-form">
+          <input name="specialty" id="dp-specialty" placeholder="Specialty" required />
+          <input name="qualifications" id="dp-qualifications" placeholder="Qualifications (e.g. MBBS, MD)" />
+          <input name="experience" id="dp-experience" placeholder="Experience" />
+          <input name="clinic" id="dp-clinic" placeholder="Clinic" />
+          <input name="consultationFee" id="dp-fee" placeholder="Consultation fee (e.g. 500)" />
+          <input name="phone" id="dp-phone" placeholder="Phone" />
+          <input name="email" id="dp-email" placeholder="Email" />
+          <textarea name="bio" id="dp-bio" placeholder="Short bio"></textarea>
+          <button type="submit" class="btn btn-primary">Save Profile</button>
+        </form>
+        <h3 style="font-size:0.9rem;margin:1rem 0 0.5rem;">Profile Photo</h3>
+        <form id="photo-form" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          <input type="file" id="photo-file" accept="image/*" style="font-size:0.8rem;flex:1;" />
+          <button type="submit" class="btn btn-outline btn-sm">Upload</button>
+        </form>
+        <div id="rating-box" style="margin-top:1rem;font-size:0.85rem;color:var(--gray-600);"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { getUser, isLoggedIn, isDoctor, api, setupNav, esc, showToast, renderBarChart } from './common.js';
+
+    if (!isLoggedIn() || !isDoctor()) window.location.href = '/login.html';
+
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    setupNav('/doctor.html');
+
+    const queueList = document.getElementById('queue-list');
+    let mySlots = [];
+    let myBlocks = [];
+
+    const user = getUser();
+    if (user && user.name) document.getElementById('doctor-greeting').textContent = `Welcome, Dr. ${user.name}.`;
+
+    loadDoctor();
+    loadStats();
+    loadReports();
+    loadQueue();
+
+    async function loadDoctor() {
+      try {
+        const res = await api('/api/doctors/me');
+        if (!res.ok) return;
+        const d = await res.json();
+        document.getElementById('doctor-name').textContent = 'Dr. ' + d.name;
+        if (d.avatar) document.getElementById('avatar-img').src = d.avatar;
+        document.getElementById('dp-specialty').value = d.specialty || '';
+        document.getElementById('dp-qualifications').value = d.qualifications || '';
+        document.getElementById('dp-experience').value = d.experience || '';
+        document.getElementById('dp-clinic').value = d.clinic || '';
+        document.getElementById('dp-fee').value = d.consultationFee || '';
+        document.getElementById('dp-phone').value = d.phone || '';
+        document.getElementById('dp-email').value = d.email || '';
+        document.getElementById('dp-bio').value = d.bio || '';
+        renderSlots(d.slots || []);
+        const rb = document.getElementById('rating-box');
+        if (d.rating && d.rating.count > 0) {
+          rb.innerHTML = `<strong>${Number(d.rating.average).toFixed(1)} / 5</strong> from ${d.rating.count} review(s)`;
+        } else {
+          rb.innerHTML = '<span style="color:var(--gray-400);">No reviews yet.</span>';
+        }
+      } catch {}
+    }
+
+    async function loadStats() {
+      try {
+        const res = await api('/api/doctors/me/stats');
+        if (!res.ok) return;
+        const s = await res.json();
+        document.getElementById('st-total').textContent = s.total || 0;
+        document.getElementById('st-today').textContent = s.upcomingToday || 0;
+        document.getElementById('st-scheduled').textContent = s.scheduled || 0;
+        document.getElementById('st-completed').textContent = s.completed || 0;
+        document.getElementById('st-cancelled').textContent = s.cancelled || 0;
+        document.getElementById('st-missed').textContent = s.missed || 0;
+      } catch {}
+    }
+
+    async function loadReports() {
+      try {
+        const res = await api('/api/doctors/me/reports');
+        if (!res.ok) return;
+        const r = await res.json();
+        document.getElementById('rp-today').textContent = r.counts.today || 0;
+        document.getElementById('rp-week').textContent = r.counts.week || 0;
+        document.getElementById('rp-month').textContent = r.counts.month || 0;
+        const feeLabel = r.fee > 0 ? '₹' : '';
+        document.getElementById('rp-earnings').textContent = (r.fee > 0 ? r.earnings.month : '—');
+        renderBarChart(document.getElementById('chart-daily'), r.daily, { color: '#2F6FD8' });
+        renderBarChart(document.getElementById('chart-monthly'), r.monthly, { color: '#0E6B4D' });
+      } catch {}
+    }
+
+    function todayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    async function loadQueue() {
+      queueList.innerHTML = '<div class="loading-wrap"><div class="spinner"></div></div>';
+      const today = todayStr();
+      const res = await api(`/api/appointments?dateFrom=${today}&dateTo=${today}`);
+      if (!res.ok) { queueList.innerHTML = '<p style="color:var(--gray-400);">Could not load queue.</p>'; return; }
+      const apps = (await res.json()) || [];
+      if (!apps.length) { queueList.innerHTML = '<p style="color:var(--gray-400);font-size:0.85rem;">No appointments today.</p>'; return; }
+      apps.sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime));
+      queueList.innerHTML = '<div style="display:flex;flex-direction:column;gap:0.5rem;">' + apps.map(a => `
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;border:1px solid var(--gray-100);border-radius:var(--radius-sm);padding:0.6rem 0.8rem;${a.priority === 'emergency' ? 'border-color:#fecaca;background:#fef2f2;' : ''}">
+          <div>
+            <strong>${esc(a.patientName)}</strong>
+            <span class="priority-badge priority-${a.priority}">${a.priority}</span>
+            <span style="color:var(--gray-400);font-size:0.8rem;margin-left:0.4rem;">${a.appointmentTime}</span>
+          </div>
+          <div class="actions">
+            <span class="queue-badge q-${a.queueStatus}">${esc(a.queueStatus)}</span>
+            ${a.queueStatus === 'waiting' ? `<button class="btn btn-outline btn-sm q-btn" data-id="${a.id}" data-q="in_consultation">In Consultation</button>` : ''}
+            ${a.queueStatus !== 'completed' ? `<button class="btn btn-primary btn-sm q-btn" data-id="${a.id}" data-q="completed">Completed</button>` : ''}
+          </div>
+        </div>`).join('') + '</div>';
+      queueList.querySelectorAll('.q-btn').forEach(b => b.addEventListener('click', async () => {
+        const r = await api(`/api/appointments/${b.dataset.id}/queue`, { method: 'POST', body: JSON.stringify({ queueStatus: b.dataset.q }) });
+        if (r.ok) { showToast('Queue updated'); loadQueue(); }
+        else { const e = await r.json(); showToast(e.error || 'Failed', 'error'); }
+      }));
+    }
+
+    // ─── Availability / blocks ─────────────────────────
+    function renderSlots(slots) {
+      mySlots = slots;
+      const el = document.getElementById('doctor-slot-list');
+      if (!slots.length) { el.innerHTML = '<p style="color:var(--gray-400);font-size:0.8rem;">No working hours set yet.</p>'; return; }
+      el.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' + slots.map((s, i) => `
+        <span class="attachment-chip">${esc(DAYS[s.dayOfWeek] + ' ' + s.startTime + '-' + s.endTime)}
+          <button class="del" data-i="${i}" title="Remove">&times;</button></span>`).join('') + '</div>';
+      el.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async () => {
+        const remaining = mySlots.filter((_, i) => i !== parseInt(btn.dataset.i, 10));
+        const r = await api('/api/doctors/me/slots', { method: 'PUT', body: JSON.stringify({ slots: remaining }) });
+        if (r.ok) { showToast('Slot removed'); renderSlots(remaining); }
+        else showToast('Failed', 'error');
+      }));
+    }
+
+    document.getElementById('doctor-slot-add').addEventListener('click', async () => {
+      const dayOfWeek = parseInt(document.getElementById('doctor-slot-day').value, 10);
+      const startTime = document.getElementById('doctor-slot-start').value;
+      const endTime = document.getElementById('doctor-slot-end').value;
+      if (!startTime || !endTime) return showToast('Fill start and end time', 'error');
+      if (startTime >= endTime) return showToast('End time must be after start time', 'error');
+      const slots = [...mySlots, { dayOfWeek, startTime, endTime }];
+      const r = await api('/api/doctors/me/slots', { method: 'PUT', body: JSON.stringify({ slots }) });
+      if (r.ok) { showToast('Slot added'); document.getElementById('doctor-slot-start').value = ''; document.getElementById('doctor-slot-end').value = ''; renderSlots(slots); }
+      else { const e = await r.json(); showToast(e.error || 'Failed', 'error'); }
+    });
+
+    async function loadBlocks() {
+      const res = await api('/api/doctors/me/blocks');
+      if (!res.ok) return;
+      myBlocks = await res.json();
+      const el = document.getElementById('doctor-block-list');
+      if (!myBlocks.length) { el.innerHTML = '<p style="color:var(--gray-400);font-size:0.8rem;">No blocked days.</p>'; return; }
+      el.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:0.4rem;">' + myBlocks.map((b, i) => `
+        <span class="attachment-chip" style="border-color:#fecaca;background:#fef2f2;">${esc(b.blockDate)}${b.startTime ? ' ' + b.startTime + '-' + (b.endTime || '') : ''}${b.reason ? ' (' + esc(b.reason) + ')' : ''}
+          <button class="del" data-i="${i}" title="Remove">&times;</button></span>`).join('') + '</div>';
+      el.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', async () => {
+        const remaining = myBlocks.filter((_, i) => i !== parseInt(btn.dataset.i, 10));
+        const r = await api('/api/doctors/me/blocks', { method: 'PUT', body: JSON.stringify({ blocks: remaining }) });
+        if (r.ok) { showToast('Block removed'); loadBlocks(); }
+        else showToast('Failed', 'error');
+      }));
+    }
+
+    document.getElementById('doctor-block-add').addEventListener('click', async () => {
+      const blockDate = document.getElementById('doctor-block-date').value;
+      const startTime = document.getElementById('doctor-block-start').value;
+      const endTime = document.getElementById('doctor-block-end').value;
+      const reason = document.getElementById('doctor-block-reason').value.trim();
+      if (!blockDate) return showToast('Pick a date to block', 'error');
+      const blocks = [...myBlocks, { blockDate, startTime, endTime, reason }];
+      const r = await api('/api/doctors/me/blocks', { method: 'PUT', body: JSON.stringify({ blocks }) });
+      if (r.ok) {
+        showToast('Day blocked');
+        ['doctor-block-date', 'doctor-block-start', 'doctor-block-end', 'doctor-block-reason'].forEach(id => document.getElementById(id).value = '');
+        loadBlocks();
+      } else { const e = await r.json(); showToast(e.error || 'Failed', 'error'); }
+    });
+
+    // ─── Profile ───────────────────────────────────────
+    document.getElementById('doctor-profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        specialty: fd.get('specialty').toString().trim(),
+        qualifications: fd.get('qualifications').toString().trim(),
+        experience: fd.get('experience').toString().trim(),
+        clinic: fd.get('clinic').toString().trim(),
+        consultationFee: fd.get('consultationFee').toString().trim(),
+        phone: fd.get('phone').toString().trim(),
+        email: fd.get('email').toString().trim(),
+        bio: fd.get('bio').toString().trim(),
+      };
+      const res = await api('/api/doctors/me', { method: 'PUT', body: JSON.stringify(payload) });
+      if (res.ok) { showToast('Profile saved'); loadReports(); }
+      else { const err = await res.json(); showToast(err.error || 'Failed', 'error'); }
+    });
+
+    document.getElementById('photo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = document.getElementById('photo-file').files[0];
+      if (!file) return showToast('Choose a photo', 'error');
+      const fd = new FormData();
+      fd.append('photo', file);
+      const r = await api('/api/doctors/me/photo', { method: 'POST', body: fd });
+      if (r.ok) { showToast('Photo uploaded'); document.getElementById('avatar-img').src = r.url || (await r.json()).avatar; }
+      else { const err = await r.json(); showToast(err.error || 'Upload failed', 'error'); }
+    });
+
+    loadBlocks();
+  </script>
+</body>
+</html>

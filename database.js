@@ -143,6 +143,121 @@ db.exec(`
     FOREIGN KEY (medicationId) REFERENCES medications(id) ON DELETE CASCADE,
     FOREIGN KEY (userId) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS patient_profiles (
+    userId TEXT PRIMARY KEY,
+    dob TEXT,
+    gender TEXT,
+    bloodGroup TEXT,
+    height TEXT,
+    weight TEXT,
+    allergies TEXT DEFAULT '',
+    conditions TEXT DEFAULT '',
+    currentMedications TEXT DEFAULT '',
+    updatedAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS health_records (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    appointmentId TEXT,
+    title TEXT NOT NULL,
+    notes TEXT DEFAULT '',
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (appointmentId) REFERENCES appointments(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS doctor_blocks (
+    id TEXT PRIMARY KEY,
+    doctorId TEXT NOT NULL,
+    blockDate TEXT NOT NULL,
+    startTime TEXT,
+    endTime TEXT,
+    reason TEXT DEFAULT '',
+    FOREIGN KEY (doctorId) REFERENCES doctors(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS prescriptions (
+    id TEXT PRIMARY KEY,
+    appointmentId TEXT,
+    userId TEXT NOT NULL,
+    doctorId TEXT NOT NULL,
+    notes TEXT DEFAULT '',
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (appointmentId) REFERENCES appointments(id),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (doctorId) REFERENCES doctors(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS prescription_items (
+    id TEXT PRIMARY KEY,
+    prescriptionId TEXT NOT NULL,
+    medicine TEXT NOT NULL,
+    dosage TEXT DEFAULT '',
+    duration TEXT DEFAULT '',
+    instructions TEXT DEFAULT '',
+    FOREIGN KEY (prescriptionId) REFERENCES prescriptions(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    appointmentId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    doctorId TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    comment TEXT DEFAULT '',
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (appointmentId) REFERENCES appointments(id),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (doctorId) REFERENCES doctors(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    appointmentId TEXT NOT NULL,
+    senderId TEXT NOT NULL,
+    body TEXT NOT NULL,
+    createdAt TEXT DEFAULT (datetime('now')),
+    readAt TEXT,
+    FOREIGN KEY (appointmentId) REFERENCES appointments(id),
+    FOREIGN KEY (senderId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS waitlist (
+    id TEXT PRIMARY KEY,
+    doctorId TEXT NOT NULL,
+    userId TEXT,
+    appointmentDate TEXT NOT NULL,
+    appointmentTime TEXT,
+    requestedAt TEXT DEFAULT (datetime('now')),
+    notifiedAt TEXT,
+    status TEXT DEFAULT 'waiting',
+    FOREIGN KEY (doctorId) REFERENCES doctors(id),
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    type TEXT DEFAULT 'system',
+    title TEXT NOT NULL,
+    message TEXT DEFAULT '',
+    readAt TEXT,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS adherence_alerts (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    period TEXT NOT NULL,
+    score INTEGER NOT NULL DEFAULT 0,
+    createdAt TEXT DEFAULT (datetime('now')),
+    resolvedAt TEXT,
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );
 `);
 
 // ─── Migrations ──────────────────────────────────────
@@ -161,6 +276,31 @@ function migrate() {
   if (!tableHasColumn('doctors', 'userId')) {
     db.exec(`ALTER TABLE doctors ADD COLUMN userId TEXT`);
   }
+
+  const addColumn = (table, column, definition) => {
+    if (!tableHasColumn(table, column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  };
+
+  addColumn('appointments', 'priority', "TEXT DEFAULT 'normal'");
+  addColumn('appointments', 'diagnosis', "TEXT DEFAULT ''");
+  addColumn('appointments', 'prescription', "TEXT DEFAULT ''");
+  addColumn('appointments', 'followUpDate', 'TEXT');
+  addColumn('appointments', 'followUpOf', 'TEXT');
+  addColumn('appointments', 'queueStatus', "TEXT DEFAULT 'waiting'");
+  addColumn('appointments', 'durationMins', 'INTEGER');
+  addColumn('appointments', 'endTime', 'TEXT');
+  addColumn('appointments', 'checkInAt', 'TEXT');
+  addColumn('appointments', 'checkInToken', 'TEXT');
+  addColumn('appointments', 'type', "TEXT DEFAULT 'In-clinic'");
+  addColumn('doctors', 'qualifications', "TEXT DEFAULT ''");
+  addColumn('doctors', 'consultationFee', "TEXT DEFAULT ''");
+  addColumn('doctors', 'bio', "TEXT DEFAULT ''");
+  addColumn('doctors', 'avatar', "TEXT DEFAULT ''");
+  addColumn('attachments', 'category', "TEXT DEFAULT 'general'");
+  addColumn('attachments', 'doctorComment', "TEXT DEFAULT ''");
+  addColumn('medications', 'frequency', "TEXT DEFAULT ''");
 
   // Medication module tables may exist from an earlier schema; backfill missing columns.
   if (tableHasColumn('medications', 'name') && !tableHasColumn('medications', 'instructions')) {
@@ -204,8 +344,8 @@ migrate();
 // ─── Prepared statements ─────────────────────────────
 
 const insertAppointmentStmt = db.prepare(`
-  INSERT INTO appointments (id, userId, doctorId, patientName, medication, doctorName, appointmentDate, appointmentTime, notes, status)
-  VALUES (@id, @userId, @doctorId, @patientName, @medication, @doctorName, @appointmentDate, @appointmentTime, @notes, @status)
+  INSERT INTO appointments (id, userId, doctorId, patientName, medication, doctorName, appointmentDate, appointmentTime, notes, status, priority, type)
+  VALUES (@id, @userId, @doctorId, @patientName, @medication, @doctorName, @appointmentDate, @appointmentTime, @notes, @status, @priority, @type)
 `);
 
 const insertUserStmt = db.prepare(`
@@ -214,12 +354,13 @@ const insertUserStmt = db.prepare(`
 `);
 
 const insertDoctorStmt = db.prepare(`
-  INSERT INTO doctors (id, userId, name, specialty, experience, clinic, phone, email)
-  VALUES (@id, @userId, @name, @specialty, @experience, @clinic, @phone, @email)
+  INSERT INTO doctors (id, userId, name, specialty, experience, clinic, phone, email, qualifications, consultationFee, bio, avatar)
+  VALUES (@id, @userId, @name, @specialty, @experience, @clinic, @phone, @email, @qualifications, @consultationFee, @bio, @avatar)
 `);
 
 const updateDoctorStmt = db.prepare(`
-  UPDATE doctors SET name=@name, specialty=@specialty, experience=@experience, clinic=@clinic, phone=@phone, email=@email
+  UPDATE doctors SET name=@name, specialty=@specialty, experience=@experience, clinic=@clinic, phone=@phone, email=@email,
+    qualifications=@qualifications, consultationFee=@consultationFee, bio=@bio, avatar=@avatar
   WHERE id=@id
 `);
 
@@ -234,8 +375,8 @@ const insertResetStmt = db.prepare(`
 `);
 
 const insertAttachmentStmt = db.prepare(`
-  INSERT INTO attachments (id, appointmentId, fileName, storedName, mimeType, size)
-  VALUES (@id, @appointmentId, @fileName, @storedName, @mimeType, @size)
+  INSERT INTO attachments (id, appointmentId, fileName, storedName, mimeType, size, category, doctorComment)
+  VALUES (@id, @appointmentId, @fileName, @storedName, @mimeType, @size, @category, @doctorComment)
 `);
 
 const insertSlotStmt = db.prepare(`
@@ -313,7 +454,7 @@ function resolveDoctorScope(user, role, doctorId) {
   return { userId: user.id };
 }
 
-export function getAllAppointments({ user, status, search, dateFrom, dateTo, doctorId, page, limit } = {}) {
+export function getAllAppointments({ user, status, search, dateFrom, dateTo, doctorId, priority, page, limit } = {}) {
   const role = user.role;
   const conditions = [];
   const params = [];
@@ -333,6 +474,10 @@ export function getAllAppointments({ user, status, search, dateFrom, dateTo, doc
   if (status) {
     conditions.push('a.status = ?');
     params.push(status);
+  }
+  if (priority) {
+    conditions.push('a.priority = ?');
+    params.push(priority);
   }
   if (search) {
     conditions.push('(a.patientName LIKE ? OR a.medication LIKE ? OR a.doctorName LIKE ?)');
@@ -380,7 +525,7 @@ export function createAppointmentInDb(appointment) {
 export function updateAppointmentInDb(id, fields) {
   const sets = [];
   const params = [];
-  for (const key of ['patientName', 'medication', 'doctorName', 'doctorId', 'appointmentDate', 'appointmentTime', 'notes', 'status', 'remindedAt']) {
+  for (const key of ['patientName', 'medication', 'doctorName', 'doctorId', 'appointmentDate', 'appointmentTime', 'notes', 'status', 'remindedAt', 'priority', 'diagnosis', 'prescription', 'queueStatus', 'durationMins', 'endTime', 'followUpDate', 'type']) {
     if (fields[key] !== undefined) {
       sets.push(`${key}=?`);
       params.push(fields[key]);
@@ -437,6 +582,52 @@ export function getAuditByAppointment(appointmentId) {
   return db.prepare('SELECT * FROM appointment_audit WHERE appointmentId = ? ORDER BY createdAt DESC').all(appointmentId);
 }
 
+export function getAuditLog({ page, limit, search } = {}) {
+  const conditions = [];
+  const params = [];
+  if (search) {
+    conditions.push('(u.name LIKE ? OR a.patientName LIKE ? OR aa.action LIKE ?)');
+    const q = `%${search}%`;
+    params.push(q, q, q);
+  }
+  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const count = db.prepare(`
+    SELECT COUNT(*) AS n FROM appointment_audit aa
+    LEFT JOIN users u ON u.id = aa.actorId
+    LEFT JOIN appointments a ON a.id = aa.appointmentId
+    ${where}
+  `).get(...params).n;
+
+  let rows;
+  if (page && limit) {
+    const offset = (page - 1) * limit;
+    rows = db.prepare(`
+      SELECT aa.*, u.name AS actorName, u.email AS actorEmail, a.patientName
+      FROM appointment_audit aa
+      LEFT JOIN users u ON u.id = aa.actorId
+      LEFT JOIN appointments a ON a.id = aa.appointmentId
+      ${where} ORDER BY aa.createdAt DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    return { data: rows, total: count, page, limit, totalPages: Math.max(1, Math.ceil(count / limit)) };
+  }
+
+  rows = db.prepare(`
+    SELECT aa.*, u.name AS actorName, u.email AS actorEmail, a.patientName
+    FROM appointment_audit aa
+    LEFT JOIN users u ON u.id = aa.actorId
+    LEFT JOIN appointments a ON a.id = aa.appointmentId
+    ${where} ORDER BY aa.createdAt DESC
+  `).all(...params);
+  return rows;
+}
+
+export function getBookedAppointmentTimes(doctorId, date) {
+  return db.prepare(
+    `SELECT appointmentTime FROM appointments
+     WHERE doctorId = ? AND appointmentDate = ? AND status != 'cancelled'`
+  ).all(doctorId, date).map(r => r.appointmentTime);
+}
+
 // ─── Stats & analytics ────────────────────────────────
 
 export function getAppointmentStats(user, doctorId) {
@@ -455,7 +646,8 @@ export function getAppointmentStats(user, doctorId) {
       COALESCE(SUM(CASE WHEN status='scheduled' THEN 1 ELSE 0 END), 0) AS scheduled,
       COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END), 0) AS completed,
       COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
-      COALESCE(SUM(CASE WHEN appointmentDate=date('now') AND status='scheduled' THEN 1 ELSE 0 END), 0) AS upcomingToday
+      COALESCE(SUM(CASE WHEN appointmentDate=date('now') AND status='scheduled' THEN 1 ELSE 0 END), 0) AS upcomingToday,
+      COALESCE(SUM(CASE WHEN status='scheduled' AND appointmentDate < date('now') THEN 1 ELSE 0 END), 0) AS missed
     FROM appointments ${where}
   `).get(...params);
 
@@ -466,7 +658,7 @@ export function getAppointmentStats(user, doctorId) {
   const bySpecialty = db.prepare(`
     SELECT d.specialty AS label, COUNT(*) AS value
     FROM appointments a LEFT JOIN doctors d ON d.id = a.doctorId
-    ${where ? where + ' AND d.specialty IS NOT NULL' : 'WHERE d.specialty IS NOT NULL'}
+    ${where ? where.replace(/appointments\./g, 'a.') + ' AND d.specialty IS NOT NULL' : 'WHERE d.specialty IS NOT NULL'}
     GROUP BY d.specialty ORDER BY value DESC LIMIT 8
   `).all(...params);
 
@@ -478,6 +670,58 @@ export function getAppointmentStats(user, doctorId) {
   `).all(...params);
 
   return { ...base, byDoctor, bySpecialty, trend };
+}
+
+export function getDoctorReports(doctorId) {
+  const fee = getDoctorById(doctorId)?.consultationFee || '0';
+  const parsedFee = Math.max(0, Number(parsedFeeString(fee)) || 0);
+  const byPeriod = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN appointmentDate = date('now') THEN 1 ELSE 0 END), 0) AS today,
+      COALESCE(SUM(CASE WHEN appointmentDate >= date('now', '-7 days') AND appointmentDate <= date('now') THEN 1 ELSE 0 END), 0) AS week,
+      COALESCE(SUM(CASE WHEN strftime('%Y-%m', appointmentDate) = strftime('%Y-%m', 'now') THEN 1 ELSE 0 END), 0) AS month,
+      COALESCE(SUM(CASE WHEN status='completed' AND appointmentDate = date('now') THEN 1 ELSE 0 END), 0) AS completedToday
+    FROM appointments WHERE doctorId = ?
+  `).get(doctorId);
+
+  const daily = db.prepare(`
+    SELECT date(appointmentDate) AS label, COUNT(*) AS value
+    FROM appointments WHERE doctorId = ? AND appointmentDate >= date('now', '-29 days')
+    GROUP BY date(appointmentDate) ORDER BY label
+  `).all(doctorId);
+
+  const monthly = db.prepare(`
+    SELECT strftime('%Y-%m', appointmentDate) AS label, COUNT(*) AS value
+    FROM appointments WHERE doctorId = ?
+    GROUP BY strftime('%Y-%m', appointmentDate) ORDER BY label
+  `).all(doctorId);
+
+  const completed = db.prepare(`
+    SELECT COUNT(*) AS count FROM appointments WHERE doctorId = ? AND status = 'completed'
+  `).get(doctorId).count;
+
+  return {
+    fee: parsedFee,
+    counts: {
+      today: byPeriod.today,
+      week: byPeriod.week,
+      month: byPeriod.month,
+      completedToday: byPeriod.completedToday,
+      totalCompleted: completed,
+    },
+    earnings: {
+      today: byPeriod.completedToday * parsedFee,
+      week: db.prepare("SELECT COUNT(*) AS n FROM appointments WHERE doctorId = ? AND status='completed' AND appointmentDate >= date('now','-7 days')").get(doctorId).n * parsedFee,
+      month: db.prepare("SELECT COUNT(*) AS n FROM appointments WHERE doctorId = ? AND status='completed' AND strftime('%Y-%m', appointmentDate) = strftime('%Y-%m', 'now')").get(doctorId).n * parsedFee,
+      total: completed * parsedFee,
+    },
+    daily,
+    monthly,
+  };
+}
+
+function parsedFeeString(value) {
+  return String(value ?? '').replace(/[^0-9.]/g, '');
 }
 
 // ─── Doctors ──────────────────────────────────────────
@@ -494,8 +738,20 @@ export function getDoctorByUserId(userId) {
   return db.prepare('SELECT * FROM doctors WHERE userId = ?').get(userId);
 }
 
+export function hasDoctorPatientHistory(doctorId, userId) {
+  return db.prepare(
+    'SELECT COUNT(*) AS n FROM appointments WHERE doctorId = ? AND userId = ?'
+  ).get(doctorId, userId).n > 0;
+}
+
 export function createDoctor(doctor) {
-  insertDoctorStmt.run(doctor);
+  insertDoctorStmt.run({
+    ...doctor,
+    qualifications: doctor.qualifications ?? '',
+    consultationFee: doctor.consultationFee ?? '',
+    bio: doctor.bio ?? '',
+    avatar: doctor.avatar ?? '',
+  });
   return getDoctorById(doctor.id);
 }
 
@@ -507,9 +763,219 @@ export function updateDoctor(id, doctor) {
 export function deleteDoctorById(id) {
   const result = db.transaction(() => {
     db.prepare('DELETE FROM doctor_slots WHERE doctorId = ?').run(id);
+    db.prepare('DELETE FROM doctor_blocks WHERE doctorId = ?').run(id);
     return db.prepare('DELETE FROM doctors WHERE id = ?').run(id).changes > 0;
   })();
   return result;
+}
+
+// ─── Doctor blocked slots ─────────────────────────────
+
+export function getDoctorBlocks(doctorId) {
+  return db.prepare('SELECT * FROM doctor_blocks WHERE doctorId = ? ORDER BY blockDate, startTime').all(doctorId);
+}
+
+export function setDoctorBlocks(doctorId, blocks) {
+  db.prepare('DELETE FROM doctor_blocks WHERE doctorId = ?').run(doctorId);
+  const insert = db.prepare(
+    'INSERT INTO doctor_blocks (id, doctorId, blockDate, startTime, endTime, reason) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const tx = db.transaction((items) => {
+    for (const b of items || []) {
+      insert.run(crypto.randomUUID(), doctorId, b.blockDate, b.startTime || null, b.endTime || null, b.reason || '');
+    }
+  });
+  tx(blocks);
+  return getDoctorBlocks(doctorId);
+}
+
+// ─── Patient profiles & health records ────────────────
+
+export function getPatientProfile(userId) {
+  return db.prepare('SELECT * FROM patient_profiles WHERE userId = ?').get(userId);
+}
+
+export function upsertPatientProfile(userId, fields) {
+  const allowed = ['dob', 'gender', 'bloodGroup', 'height', 'weight', 'allergies', 'conditions', 'currentMedications'];
+  const existing = getPatientProfile(userId);
+  const merged = {};
+  for (const k of allowed) merged[k] = fields[k] !== undefined ? String(fields[k]) : (existing ? existing[k] ?? '' : '');
+  const upsert = db.prepare(`
+    INSERT INTO patient_profiles (userId, dob, gender, bloodGroup, height, weight, allergies, conditions, currentMedications, updatedAt)
+    VALUES (@userId, @dob, @gender, @bloodGroup, @height, @weight, @allergies, @conditions, @currentMedications, datetime('now'))
+    ON CONFLICT(userId) DO UPDATE SET
+      dob=excluded.dob, gender=excluded.gender, bloodGroup=excluded.bloodGroup, height=excluded.height,
+      weight=excluded.weight, allergies=excluded.allergies, conditions=excluded.conditions,
+      currentMedications=excluded.currentMedications, updatedAt=datetime('now')
+  `);
+  upsert.run({ userId, ...merged });
+  return getPatientProfile(userId);
+}
+
+export function getHealthRecords(userId) {
+  return db.prepare('SELECT * FROM health_records WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+}
+
+export function createHealthRecord({ userId, appointmentId, title, notes }) {
+  const id = crypto.randomUUID();
+  db.prepare(
+    'INSERT INTO health_records (id, userId, appointmentId, title, notes) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, userId, appointmentId || null, title, notes || '');
+  return db.prepare('SELECT * FROM health_records WHERE id = ?').get(id);
+}
+
+// ─── Prescriptions ────────────────────────────────────
+
+const insertPrescriptionStmt = db.prepare(`
+  INSERT INTO prescriptions (id, appointmentId, userId, doctorId, notes)
+  VALUES (@id, @appointmentId, @userId, @doctorId, @notes)
+`);
+
+function withPrescriptionItems(prescription) {
+  if (!prescription) return prescription;
+  return {
+    ...prescription,
+    items: db.prepare('SELECT * FROM prescription_items WHERE prescriptionId = ? ORDER BY id').all(prescription.id),
+  };
+}
+
+export function createPrescription({ appointmentId, userId, doctorId, notes, items }) {
+  const id = crypto.randomUUID();
+  const tx = db.transaction(() => {
+    insertPrescriptionStmt.run({ id, appointmentId: appointmentId || null, userId, doctorId, notes: notes || '' });
+    const itemStmt = db.prepare(
+      'INSERT INTO prescription_items (id, prescriptionId, medicine, dosage, duration, instructions) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    for (const it of items || []) {
+      if (!it?.medicine?.trim()) continue;
+      itemStmt.run(crypto.randomUUID(), id, it.medicine.trim(), it.dosage || '', it.duration || '', it.instructions || '');
+    }
+  });
+  tx();
+  return getPrescriptionById(id);
+}
+
+export function getPrescriptionById(id) {
+  return withPrescriptionItems(db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(id));
+}
+
+export function getPrescriptionsByUser(userId) {
+  return db.prepare('SELECT * FROM prescriptions WHERE userId = ? ORDER BY createdAt DESC').all(userId).map(withPrescriptionItems);
+}
+
+export function getPrescriptionsByAppointment(appointmentId) {
+  return db.prepare('SELECT * FROM prescriptions WHERE appointmentId = ? ORDER BY createdAt DESC').all(appointmentId).map(withPrescriptionItems);
+}
+
+export function getPrescriptionsByDoctor(doctorId) {
+  return db.prepare('SELECT * FROM prescriptions WHERE doctorId = ? ORDER BY createdAt DESC').all(doctorId).map(withPrescriptionItems);
+}
+
+export function getAllPrescriptions() {
+  return db.prepare('SELECT * FROM prescriptions ORDER BY createdAt DESC').all().map(withPrescriptionItems);
+}
+
+export function deletePrescriptionById(id) {
+  const result = db.transaction(() => {
+    db.prepare('DELETE FROM prescription_items WHERE prescriptionId = ?').run(id);
+    return db.prepare('DELETE FROM prescriptions WHERE id = ?').run(id).changes > 0;
+  })();
+  return result;
+}
+
+// ─── Reviews ──────────────────────────────────────────
+
+export function createReview({ appointmentId, userId, doctorId, rating, comment }) {
+  const id = crypto.randomUUID();
+  db.prepare(
+    'INSERT INTO reviews (id, appointmentId, userId, doctorId, rating, comment) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, appointmentId, userId, doctorId, rating, comment || '');
+  return db.prepare('SELECT * FROM reviews WHERE id = ?').get(id);
+}
+
+export function getReviewsByDoctor(doctorId) {
+  return db.prepare(`
+    SELECT r.*, u.name AS patientName
+    FROM reviews r JOIN users u ON u.id = r.userId
+    WHERE r.doctorId = ? ORDER BY r.createdAt DESC
+  `).all(doctorId);
+}
+
+export function getDoctorRating(doctorId) {
+  return db.prepare(`
+    SELECT COUNT(*) AS count, COALESCE(CAST(AVG(rating) AS REAL), 0) AS average
+    FROM reviews WHERE doctorId = ?
+  `).get(doctorId);
+}
+
+export function getReviewByAppointment(appointmentId) {
+  return db.prepare('SELECT * FROM reviews WHERE appointmentId = ?').get(appointmentId);
+}
+
+// ─── Messages / chat ──────────────────────────────────
+
+export function createMessage({ appointmentId, senderId, body }) {
+  const id = crypto.randomUUID();
+  db.prepare(
+    'INSERT INTO messages (id, appointmentId, senderId, body) VALUES (?, ?, ?, ?)'
+  ).run(id, appointmentId, senderId, body);
+  return db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
+}
+
+export function getMessagesByAppointment(appointmentId) {
+  return db.prepare(`
+    SELECT m.*, u.name AS senderName
+    FROM messages m JOIN users u ON u.id = m.senderId
+    WHERE m.appointmentId = ? ORDER BY m.createdAt
+  `).all(appointmentId);
+}
+
+export function markMessagesRead(appointmentId, readerId) {
+  db.prepare(
+    "UPDATE messages SET readAt = datetime('now') WHERE appointmentId = ? AND senderId != ? AND readAt IS NULL"
+  ).run(appointmentId, readerId);
+}
+
+// ─── Notifications ────────────────────────────────────
+
+export function createNotification({ userId, type = 'system', title, message }) {
+  if (!userId || !title?.trim()) return null;
+  const id = crypto.randomUUID();
+  db.prepare(
+    'INSERT INTO notifications (id, userId, type, title, message) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, userId, type, title?.trim(), message?.trim() || '');
+  return db.prepare('SELECT * FROM notifications WHERE id = ?').get(id);
+}
+
+export function getNotificationsForUser(userId) {
+  return db.prepare('SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+}
+
+export function markNotificationRead(id, userId) {
+  db.prepare(
+    "UPDATE notifications SET readAt = datetime('now') WHERE id = ? AND userId = ?"
+  ).run(id, userId);
+  return db.prepare('SELECT * FROM notifications WHERE id = ?').get(id);
+}
+
+export function markAllNotificationsRead(userId) {
+  db.prepare(
+    "UPDATE notifications SET readAt = datetime('now') WHERE userId = ? AND readAt IS NULL"
+  ).run(userId);
+  return getNotificationsForUser(userId);
+}
+
+// ─── Follow-up ────────────────────────────────────────
+
+export function createFollowUp({ originalId, patientName, medication, doctorId, doctorName, userId, date, time, notes }) {
+  const id = crypto.randomUUID();
+  db.prepare(`
+    INSERT INTO appointments (id, userId, doctorId, patientName, medication, doctorName, appointmentDate, appointmentTime, notes, status, followUpOf)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+  `).run(id, userId, doctorId, patientName, medication, doctorName, date, time, notes, originalId);
+  const created = getAppointmentById(id);
+  updateAppointmentInDb(originalId, { followUpDate: date });
+  return created;
 }
 
 // ─── Doctor availability slots ────────────────────────
@@ -560,13 +1026,22 @@ function withAttachments(row) {
   if (!row) return row;
   return {
     ...row,
-    attachments: db.prepare('SELECT id, appointmentId, fileName, mimeType, size, uploadedAt FROM attachments WHERE appointmentId = ?').all(row.id),
+    attachments: db.prepare('SELECT id, appointmentId, fileName, mimeType, size, category, doctorComment, uploadedAt FROM attachments WHERE appointmentId = ?').all(row.id),
   };
 }
 
 export function createAttachment(attachment) {
-  insertAttachmentStmt.run(attachment);
+  insertAttachmentStmt.run({
+    ...attachment,
+    category: attachment.category || 'general',
+    doctorComment: attachment.doctorComment || '',
+  });
   return db.prepare('SELECT * FROM attachments WHERE id = ?').get(attachment.id);
+}
+
+export function updateAttachmentComment(id, comment) {
+  db.prepare('UPDATE attachments SET doctorComment = ? WHERE id = ?').run(comment || '', id);
+  return db.prepare('SELECT * FROM attachments WHERE id = ?').get(id);
 }
 
 export function getAttachmentById(id) {
@@ -614,7 +1089,7 @@ export function getUserMedications(userId) {
 export function updateMedication(id, fields) {
   const sets = [];
   const params = [];
-  for (const key of ['name', 'dosage', 'instructions', 'startDate', 'endDate', 'active']) {
+  for (const key of ['name', 'dosage', 'instructions', 'frequency', 'startDate', 'endDate', 'active']) {
     if (fields[key] !== undefined) {
       if (key === 'active') {
         sets.push('active=?');
