@@ -17,6 +17,7 @@ import { initSchedule } from './pages/schedule.js';
 import { initQueue } from './pages/queue.js';
 import { initPatients } from './pages/patients.js';
 import { initConsult } from './pages/consult.js';
+import { initRecommend } from './pages/recommend.js';
 
 initAuth();
 initDashboards();
@@ -32,6 +33,7 @@ initSchedule();
 initQueue();
 initPatients();
 initConsult();
+initRecommend();
 
 await store.bootstrap();
 

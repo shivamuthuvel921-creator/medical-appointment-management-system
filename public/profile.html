@@ -53,8 +53,14 @@
       <div class="card">
         <h2>Change Password</h2>
         <form id="password-form">
-          <input type="password" name="oldPassword" placeholder="Current password" required autocomplete="current-password" />
-          <input type="password" name="newPassword" placeholder="New password (min 8 chars)" required autocomplete="new-password" />
+          <div class="password-wrap">
+            <input type="password" id="oldPassword-field" name="oldPassword" placeholder="Current password" required autocomplete="current-password" />
+            <button type="button" class="toggle-password" data-target="oldPassword-field">Show</button>
+          </div>
+          <div class="password-wrap">
+            <input type="password" id="newPassword-field" name="newPassword" placeholder="New password (min 8 chars)" required autocomplete="new-password" />
+            <button type="button" class="toggle-password" data-target="newPassword-field">Show</button>
+          </div>
           <button type="submit" class="btn btn-primary">Update Password</button>
         </form>
         <p style="margin-top:1rem;font-size:0.8rem;">
@@ -95,6 +101,16 @@
       });
       if (res.ok) { showToast('Profile updated'); load(); }
       else { const err = await res.json(); showToast(err.error || 'Failed', 'error'); }
+    });
+
+    document.querySelectorAll('.toggle-password[data-target]').forEach(btn => {
+      const input = document.getElementById(btn.dataset.target);
+      if (!input) return;
+      btn.addEventListener('click', () => {
+        const hidden = input.type === 'password';
+        input.type = hidden ? 'text' : 'password';
+        btn.textContent = hidden ? 'Hide' : 'Show';
+      });
     });
 
     document.getElementById('password-form').addEventListener('submit', async (e) => {

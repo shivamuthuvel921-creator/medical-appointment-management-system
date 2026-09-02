@@ -59,7 +59,7 @@ router.post('/register', async (req, res) => {
   }
 
   const token = generateToken(user);
-  res.status(201).json({ token, user });
+  res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, profilePhoto: user.profilePhoto || '' } });
 });
 
 router.post('/login', async (req, res) => {
@@ -82,7 +82,7 @@ router.post('/login', async (req, res) => {
   const token = generateToken(user);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, profilePhoto: user.profilePhoto || '' },
   });
 });
 

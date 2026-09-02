@@ -17,6 +17,8 @@ import prescriptionRoutes from './routes/prescriptions.js';
 import reviewRoutes from './routes/reviews.js';
 import messageRoutes from './routes/messages.js';
 import notificationRoutes from './routes/notifications.js';
+import recommendationRoutes from './routes/recommendations.js';
+import profileRoutes from './routes/profile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -59,6 +61,8 @@ app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/profile', profileRoutes);
 
 app.get('/api/stats', authenticate, (req, res) => {
   const stats = getAppointmentStats(req.user, req.query.doctorId);

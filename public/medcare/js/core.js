@@ -535,6 +535,40 @@ export function hashId(prefix = 'MC', len = 8) {
   return `${prefix}-${s}`;
 }
 
+// ── Password visibility toggle (reusable) ─────────────────
+// Attaches Show/Hide eye buttons to every input referenced by
+// `button[data-pw]` inside `root`. Declarative markup is:
+// <div class="input-icon" style="position:relative"><input id="myPass" type="password" style="padding-right:44px"><button data-pw="myPass"></button></div>
+// The helper is idempotent and works for dynamically injected forms
+// (call again after injecting new HTML).
+export function bindPasswordToggles(root = document) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll('button[data-pw]').forEach(btn => {
+    if (btn._pwBound) return;
+    btn._pwBound = true;
+    const input = (scope.getElementById ? scope.getElementById(btn.dataset.pw) : document.getElementById(btn.dataset.pw)) || scope.querySelector('#' + CSS.escape(btn.dataset.pw));
+    if (!input) return;
+    // ensure type=button and accessible label
+    btn.type = 'button';
+    if (!btn.getAttribute('aria-label')) btn.setAttribute('aria-label', 'Show password');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      // preserve value and focus
+      const v = input.value;
+      input.value = '';
+      input.value = v;
+      input.focus({ preventScroll: true });
+      try { input.setSelectionRange(v.length, v.length); } catch {}
+      btn.innerHTML = icon(show ? 'eyeOff' : 'eye', 17);
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('aria-pressed', String(show));
+    });
+    // keyboard already handled via native button, no extra needed
+  });
+}
+
 // tiny text truncation
 export function truncate(s, n = 40) {
   s = String(s || '');

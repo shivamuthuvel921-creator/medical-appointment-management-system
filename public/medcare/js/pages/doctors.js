@@ -22,13 +22,17 @@ function findPage(vp, params) {
   if (params?.get('doc')) return bookingPage(vp, params);
 
   const specs = [...new Set(getDoctors().map(d => d.specialty))].sort();
-  const locs = [...new Set(getDoctors().map(d => d.location))].filter(Boolean).sort();
+  const locs = [...new Set(getDoctors().map(d => d.location || d.city || '')).filter(Boolean)].sort();
+  // Include clinical specialties for filter completeness
+  const allSpecs = ['General Medicine','Cardiology','Dermatology','Neurology','Pediatrics','Orthopedics','Gynecology','Psychiatry','ENT','Ophthalmology'];
+  const filterSpecs = [...new Set([...specs, ...allSpecs.filter(s => specs.includes(s))])].sort();
+  // Use specs from DB but ensure at least the 10 core appear if present
 
   vp.innerHTML = `
-  ${pageHead('Find doctors', 'Search the directory by specialty, clinic or location and book a consultation in minutes.')}
+  ${pageHead('Find doctors', 'Search the directory by name, specialty, clinic or location and book a consultation in minutes.')}
   <div class="card card-pad" style="margin-bottom:18px;display:grid;gap:12px">
     <div class="input-icon">
-      ${icon('search', 16)}<input class="input" id="docSearch" placeholder="Search doctors, specialties or clinics…">
+      ${icon('search', 16)}<input class="input" id="docSearch" placeholder="Search by doctor name, specialization, clinic or location...">
     </div>
     <div class="filter-bar">
       <div class="field" style="margin:0"><label>Specialty</label>
@@ -54,18 +58,23 @@ function findPage(vp, params) {
   const setInputs = () => { qEl.value = state.q; vp.querySelector('#fSpec').value = state.spec; vp.querySelector('#fLoc').value = state.loc; vp.querySelector('#fAvail').value = state.avail; };
   const apply = () => {
     const q = state.q.toLowerCase();
-    const weekAhead = toISO(new Date(Date.now() + 6 * 864e5));
     const list = getDoctors().filter(d => {
       if (state.spec && d.specialty !== state.spec) return false;
-      if (state.loc && d.location !== state.loc) return false;
+      if (state.loc && (d.location !== state.loc && d.city !== state.loc)) return false;
       if (state.avail === 'today' && !d.availableToday) return false;
       if (state.avail === 'soon' && !d.availableToday && !getAvailability(d.id, todayISO()).slots.length) return false;
-      if (q && !(d.name + d.specialty + d.clinic + (d.location || '')).toLowerCase().includes(q)) return false;
+      if (q) {
+        const hay = `${d.name} ${d.specialty} ${d.clinic} ${d.location || ''} ${d.city || ''} ${d.education || ''} ${d.languages || ''} ${d.bio || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
     count.textContent = `${list.length} doctor${list.length === 1 ? '' : 's'} found`;
-    grid.innerHTML = list.map(d => docCard(d, true)).join('') || `<div class="empty"><div class="e-ic">${icon('stethoscope', 30)}</div><h4>No doctors match</h4><p>Try adjusting your search or filters.</p></div>`;
+    grid.innerHTML = list.map(d => docCard(d, true)).join('') || `<div class="empty" style="grid-column:1/-1"><div class="e-ic">${icon('stethoscope', 30)}</div><h4>No doctors match</h4><p>Try adjusting your search or filters.</p><button class="btn btn-outline btn-sm" id="clearFilters" style="margin-top:10px">${icon('refresh',14)} Clear filters</button></div>`;
     grid.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => navigate(`#/scheduling?doc=${b.dataset.book}`)));
+    grid.querySelectorAll('[data-profile]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); doctorProfileModal(b.dataset.profile); }));
+    const clearBtn = grid.querySelector('#clearFilters');
+    if (clearBtn) clearBtn.addEventListener('click', () => { Object.assign(state, { q: '', spec: '', loc: '', avail: '' }); setInputs(); apply(); });
   };
 
   qEl.addEventListener('input', () => { state.q = qEl.value; apply(); });
@@ -77,29 +86,51 @@ function findPage(vp, params) {
 }
 
 function docCard(d, interactive = true) {
-  const next = getAvailability(d.id, todayISO()).nextFree;
+  const av = getAvailability(d.id, todayISO());
+  const next = av.nextFree;
+  const availText = d.availableToday ? `Available today` : (next ? `Next available: ${fmtTime(next)}` : 'No available slots today');
+  const availSub = d.availableToday && next ? `Next slot: ${fmtTime(next)}` : (!d.availableToday && next ? `Next free ${fmtTime(next)}` : '');
+  const ratingHtml = d.reviews > 0
+    ? `${icon('star', 13)} ${Number(d.rating).toFixed(1)}<span class="n">(${d.reviews} reviews)</span>`
+    : `<span class="text-faint" style="font-weight:600;font-size:.76rem">${icon('star',13)} No reviews yet</span>`;
+  const languages = d.languages ? d.languages.split(',').map(s=>s.trim()).filter(Boolean).join(' • ') : '';
+  const clinicLine = d.clinic || 'MedCare Clinic';
+  const locationLine = d.location || [d.city, d.state].filter(Boolean).join(', ') || '';
+  const qualLine = d.education || d.qualifications || '';
   return `
-  <div class="doc-card" data-doc="${d.id}">
+  <div class="doc-card" data-doc="${d.id}" style="display:flex;flex-direction:column">
     <div class="doc-card-top">
       ${doctorAvatar(d, 'lg')}
       <div style="flex:1;min-width:0">
         <div class="doc-name">${esc(d.name)}</div>
         <div class="doc-spec" style="margin-top:3px">${esc(d.specialty)}</div>
-        <div class="rating-stars" style="margin-top:6px">${icon('star', 13)} ${d.rating}<span class="n">(${d.reviews} reviews)</span></div>
+        <div class="rating-stars" style="margin-top:6px">${ratingHtml}</div>
       </div>
     </div>
-    <div class="doc-card-body">
+    <div class="doc-card-body" style="flex:1">
+      ${qualLine ? `<div class="doc-facts"><span class="fact">${icon('award', 13)} ${esc(qualLine)}</span></div>` : ''}
       <div class="doc-facts">
-        <span class="fact">${icon('award', 14)} ${esc(d.experience)}</span>
-        <span class="fact">${icon('mapPin', 14)} ${esc(d.clinic)}${d.location ? `, ${esc(d.location)}` : ''}</span>
+        <span class="fact">${icon('briefcase', 13)} ${esc(d.experience)}</span>
+        <span class="fact">${icon('clock', 13)} ${esc(d.durationMins || d.duration || 30)} mins</span>
       </div>
-      <div class="doc-avail ${d.availableToday ? '' : 'no'}">
-        <span class="ind"></span>${d.availableToday ? `Available today · next slot ${fmtTime(next)}` : next ? `Next free ${fmtTime(next)}` : 'Not available today'}
+      <div class="doc-facts" style="align-items:flex-start">
+        <span class="fact" style="align-items:flex-start">${icon('mapPin', 13)} <span><b>${esc(clinicLine)}</b>${locationLine ? `<br><span class="text-faint" style="font-size:.72rem">${esc(locationLine)}</span>` : ''}</span></span>
+      </div>
+      ${languages ? `<div class="doc-facts"><span class="fact">${icon('globe', 13)} ${esc(languages)}</span></div>` : ''}
+      <div class="doc-avail ${d.availableToday ? '' : 'no'}" style="margin-top:8px">
+        <span class="ind ${d.availableToday ? '' : 'no'}"></span>
+        <span>
+          <b>${d.availableToday ? '🟢 ' : '⚪ '}${esc(availText)}</b>
+          ${availSub ? `<br><span class="text-faint" style="font-size:.72rem;font-weight:500">${esc(availSub)}</span>` : ''}
+        </span>
       </div>
     </div>
-    <div class="doc-card-foot">
-      <b class="doc-fee">${money(d.fee)}</b>
-      <button class="btn btn-primary btn-sm" data-book="${d.id}">${icon('calendarPlus', 14)} Book</button>
+    <div class="doc-card-foot" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <b class="doc-fee" style="color:var(--success)">${money(d.fee)}</b>
+      <div class="flex gap-8">
+        <button class="btn btn-outline btn-sm" data-profile="${d.id}">${icon('user', 13)} View Profile</button>
+        <button class="btn btn-primary btn-sm" data-book="${d.id}">${icon('calendarPlus', 13)} Book</button>
+      </div>
     </div>
   </div>`;
 }
@@ -205,31 +236,44 @@ function bookingPage(vp, params) {
   }
 
   function docCardInner(d) {
-    const next = getAvailability(d.id, todayISO()).nextFree;
+    const av = getAvailability(d.id, todayISO());
+    const next = av.nextFree;
+    const ratingHtml = d.reviews > 0
+      ? `${icon('star', 13)} ${Number(d.rating).toFixed(1)}<span class="n">(${d.reviews} reviews)</span>`
+      : `<span class="text-faint" style="font-weight:600;font-size:.74rem">${icon('star',13)} No reviews yet</span>`;
+    const languages = d.languages ? d.languages.split(',').map(s=>s.trim()).filter(Boolean).join(' • ') : '';
+    const locationLine = d.location || [d.city, d.state].filter(Boolean).join(', ') || '';
     return `
-    <div class="doc-card ${st.doctorId === d.id ? 'selected-doc' : ''}" data-doc="${d.id}" style="cursor:pointer">
+    <div class="doc-card ${st.doctorId === d.id ? 'selected-doc' : ''}" data-doc="${d.id}" style="cursor:pointer;display:flex;flex-direction:column">
       <div class="doc-card-top">
         ${doctorAvatar(d, 'lg')}
         <div style="flex:1;min-width:0">
           <div class="doc-name">${esc(d.name)}</div>
           <div class="doc-spec" style="margin-top:3px">${esc(d.specialty)}</div>
-          <div class="doc-qual">${esc(d.education || '')}</div>
-          <div class="doc-facts" style="margin-top:6px">
-            <span class="fact">${icon('award', 13)} ${esc(d.experience)}</span>
-            <span class="fact">${icon('mapPin', 13)} ${esc(d.clinic)}</span>
-          </div>
+          <div class="rating-stars" style="margin-top:6px">${ratingHtml}</div>
+          ${d.education ? `<div class="text-faint" style="font-size:.72rem;margin-top:4px">${icon('award',11)} ${esc(d.education)}</div>` : ''}
         </div>
       </div>
-      <div class="doc-card-meta">
-        <span class="rating-stars">${icon('star', 13)} ${d.rating}<span class="n">(${d.reviews} reviews)</span></span>
-        <b class="doc-fee">${money(d.fee)}</b>
+      <div class="doc-card-body" style="flex:1;margin-top:10px;display:grid;gap:6px">
+        <div class="doc-facts">
+          <span class="fact">${icon('briefcase', 13)} ${esc(d.experience)}</span>
+          <span class="fact">${icon('clock', 13)} ${esc(d.durationMins || d.duration || 30)} mins</span>
+        </div>
+        <div class="doc-facts">
+          <span class="fact">${icon('mapPin', 13)} ${esc(d.clinic)}${locationLine ? `, ${esc(locationLine)}` : ''}</span>
+        </div>
+        ${languages ? `<div class="doc-facts"><span class="fact">${icon('globe', 13)} ${esc(languages)}</span></div>` : ''}
+        <div class="doc-avail ${d.availableToday ? '' : 'no'}" style="margin-top:6px">
+          <span class="ind ${d.availableToday ? '' : 'no'}"></span>${d.availableToday ? `Available today · next slot ${fmtTime(next)}` : next ? `Next free ${fmtTime(next)}` : 'Not available today'}
+        </div>
       </div>
-      <div class="doc-avail ${d.availableToday ? '' : 'no'}">
-        <span class="ind"></span>${d.availableToday ? `Available today · next slot ${fmtTime(next)}` : next ? `Next free ${fmtTime(next)}` : 'Not available today'}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+        <b class="doc-fee" style="color:var(--success)">${money(d.fee)}</b>
+        <span class="text-faint" style="font-size:.70rem">${esc(d.consultationType || 'In-clinic')}</span>
       </div>
-      <div class="doc-card-foot">
-        <button class="btn btn-outline btn-sm" data-profile="${d.id}">${icon('user', 14)} View Profile</button>
-        <button class="btn btn-primary btn-sm" data-select-doc="${d.id}">${icon('calendarPlus', 14)} Select Doctor</button>
+      <div class="doc-card-foot" style="margin-top:10px">
+        <button class="btn btn-outline btn-sm" data-profile="${d.id}" style="flex:1">${icon('user', 13)} View Profile</button>
+        <button class="btn btn-primary btn-sm" data-select-doc="${d.id}" style="flex:1">${icon('calendarPlus', 13)} Select</button>
       </div>
     </div>`;
   }
@@ -238,30 +282,125 @@ function bookingPage(vp, params) {
     const d = getDoctor(docId);
     if (!d) return;
     const next = getAvailability(d.id, todayISO()).nextFree;
+    const ratingHtml = d.reviews > 0
+      ? `${icon('star', 13)} ${Number(d.rating).toFixed(1)}<span class="n">(${d.reviews} reviews)</span>`
+      : `<span class="text-faint" style="font-weight:600;font-size:.78rem">${icon('star',13)} No reviews yet</span>`;
+    const languages = d.languages ? d.languages.split(',').map(s=>s.trim()).filter(Boolean).join(' • ') : '—';
+    const clinicAddr = [d.address, d.city, d.state, d.country].filter(Boolean).join(', ') || d.clinic || '—';
+    const postal = d.postalCode ? ` - ${esc(d.postalCode)}` : '';
+    const fee = d.fee ? money(d.fee) : '—';
+    // Build weekly availability overview from real slots
+    const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const isAvailableToday = d.availableToday;
+    const availBadge = isAvailableToday
+      ? `<span class="badge green plain">🟢 Available today${next ? ` · Next slot ${fmtTime(next)}` : ''}</span>`
+      : (next ? `<span class="badge amber plain">⚪ Next free ${fmtTime(next)}</span>` : `<span class="badge gray plain">No available slots today</span>`);
+    const weeklyRows = DAY_NAMES.map((day, idx) => {
+      const daySlots = (d.slots || []).filter(s => s.dayOfWeek === idx);
+      const txt = daySlots.length ? daySlots.map(s => `${s.startTime} – ${s.endTime}`).join(' · ') : '<span class="text-faint">Unavailable</span>';
+      const isToday = new Date().getDay() === idx;
+      return `<div class="bs-row" style="${isToday ? 'background:var(--blue-soft);border-radius:8px;padding:6px 8px' : ''}"><span class="k" style="min-width:90px">${icon('calendar',13)} ${day}${isToday ? ' <b>(Today)</b>' : ''}</span><span class="v" style="font-size:.78rem">${txt}</span></div>`;
+    }).join('');
+    // Areas of expertise - generic per specialty without diagnosis claims
+    const expertiseMap = {
+      'Dermatology': ['Acne', 'Skin allergies', 'Eczema', 'General dermatology'],
+      'Cardiology': ['Hypertension', 'Heart health', 'Cholesterol management', 'Preventive cardiology'],
+      'Neurology': ['Headache & migraine', 'Epilepsy care', 'Stroke prevention', 'General neurology'],
+      'General Medicine': ['Fever & infection', 'Lifestyle disorders', 'Preventive check-ups', 'General consultation'],
+      'Pediatrics': ['Vaccination', 'Growth & nutrition', 'Childhood infections', 'Developmental review'],
+      'Gynecology': ['Women\'s health', 'Antenatal care', 'Menstrual health', 'General gynaecology'],
+      'Orthopedics': ['Joint pain', 'Arthritis', 'Fracture care', 'Spine health'],
+      'Psychiatry': ['Stress & anxiety', 'Sleep concerns', 'Mood support', 'General psychiatry'],
+      'ENT': ['Ear concerns', 'Nose & sinus', 'Throat care', 'Allergy & hearing'],
+      'Ophthalmology': ['Vision check', 'Cataract screening', 'Dry eye', 'General eye health'],
+    };
+    const areas = expertiseMap[d.specialty] || ['General consultation'];
     openModal(`
     <div class="modal-head"><h3>Doctor profile</h3><button class="icon-btn" data-close aria-label="Close">${icon('x', 18)}</button></div>
-    <div class="modal-body" style="display:grid;gap:16px">
-      <div class="flex" style="gap:14px;align-items:center;flex-wrap:wrap">
+    <div class="modal-body" style="display:grid;gap:18px;max-height:72vh;overflow:auto;padding-right:4px">
+      <!-- Header -->
+      <div class="flex" style="gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;background:var(--surface-2);border-radius:14px">
         ${doctorAvatar(d, 'lg')}
-        <div style="flex:1;min-width:200px">
-          <h4 style="font-family:var(--font-display);font-size:1.05rem;font-weight:700">${esc(d.name)}</h4>
-          <div class="row-sub">${esc(d.specialty)} · ${esc(d.experience)}</div>
-          <div class="flex gap-8 mt-8" style="flex-wrap:wrap">
-            <span class="rating-stars">${icon('star', 13)} ${d.rating}<span class="n">(${d.reviews} reviews)</span></span>
-            <span class="badge ${d.availableToday ? 'green' : 'amber'} plain">${d.availableToday ? 'Available today' : 'Unavailable'}</span>
+        <div style="flex:1;min-width:220px">
+          <h4 style="font-family:var(--font-display);font-size:1.15rem;font-weight:800">${esc(d.name)}</h4>
+          <div style="font-size:.78rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">${esc(d.specialty)}</div>
+          <div class="flex gap-8 mt-8" style="flex-wrap:wrap;align-items:center">
+            <span class="rating-stars">${ratingHtml}</span>
+            ${availBadge}
           </div>
+          ${d.bio ? `<p class="text-muted" style="font-size:.82rem;margin-top:10px;line-height:1.5">${esc(d.bio)}</p>` : ''}
         </div>
       </div>
-      <div class="booking-sheet">
-        <div class="bs-row"><span class="k">${icon('award', 15)} Qualification</span><span class="v">${esc(d.education || '—')}</span></div>
-        <div class="bs-row"><span class="k">${icon('mapPin', 15)} Hospital / Clinic</span><span class="v">${esc(d.clinic)}${d.location ? `, ${esc(d.location)}` : ''}</span></div>
-        <div class="bs-row"><span class="k">${icon('dollar', 15)} Consultation fee</span><span class="v" style="color:var(--success)">${money(d.fee)}</span></div>
-        <div class="bs-row"><span class="k">${icon('globe', 15)} Languages</span><span class="v">${esc(d.languages || '—')}</span></div>
-        <div class="bs-row"><span class="k">${icon('clock', 15)} Next free slot</span><span class="v">${next ? fmtTime(next) : 'Not available today'}</span></div>
-      </div>
-      ${d.bio ? `<div class="stepper-hint" style="margin:0">${icon('note', 16)} <b>About:</b> ${esc(d.bio)}</div>` : ''}
+
+      <!-- About -->
+      ${d.bio ? `<section><h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('note',15)} About</h5><p class="text-muted" style="font-size:.84rem;line-height:1.6">${esc(d.bio)}</p></section>` : ''}
+
+      <!-- Specialization -->
+      <section>
+        <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('stethoscope',15)} Specialization</h5>
+        <div style="display:grid;gap:8px">
+          <div class="bs-row"><span class="k">Primary</span><span class="v"><b>${esc(d.specialty)}</b></span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">${areas.map(a=>`<span class="badge blue plain" style="font-size:.72rem">${esc(a)}</span>`).join('')}</div>
+          <p class="text-faint" style="font-size:.70rem;margin-top:4px">Areas listed are general focus topics, not diagnostic claims. The doctor will assess your concern during consultation.</p>
+        </div>
+      </section>
+
+      <!-- Qualifications -->
+      <section>
+        <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('award',15)} Qualifications</h5>
+        <div class="bs-row"><span class="k">Degrees</span><span class="v" style="font-weight:600">${esc(d.education || d.qualifications || '—')}</span></div>
+        ${d.licenseNumber ? `<div class="bs-row"><span class="k">Registration</span><span class="v mono" style="font-size:.78rem">${esc(d.licenseNumber)}</span></div>` : ''}
+        ${d.department ? `<div class="bs-row"><span class="k">Department</span><span class="v">${esc(d.department)}</span></div>` : ''}
+      </section>
+
+      <!-- Experience & Languages -->
+      <section style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('briefcase',15)} Experience</h5>
+          <div class="bs-row"><span class="k">Experience</span><span class="v"><b>${esc(d.experience)}</b></span></div>
+          <div class="bs-row"><span class="k">Gender</span><span class="v">${esc(d.gender || '—')}</span></div>
+        </div>
+        <div>
+          <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('globe',15)} Languages</h5>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.languages ? d.languages.split(',') : []).map(l=>`<span class="badge teal plain">${esc(l.trim())}</span>`).join('') || '<span class="text-faint">—</span>'}</div>
+        </div>
+      </section>
+
+      <!-- Clinic -->
+      <section>
+        <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('mapPin',15)} Clinic Information</h5>
+        <div class="booking-sheet">
+          <div class="bs-row"><span class="k">Clinic</span><span class="v"><b>${esc(d.clinic)}</b></span></div>
+          <div class="bs-row"><span class="k">Address</span><span class="v">${esc(clinicAddr)}${postal}</span></div>
+          <div class="bs-row"><span class="k">City / State</span><span class="v">${esc([d.city, d.state].filter(Boolean).join(', ') || '—')}</span></div>
+          <div class="bs-row"><span class="k">Phone</span><span class="v">${esc(d.phone || '—')}</span></div>
+        </div>
+      </section>
+
+      <!-- Consultation -->
+      <section>
+        <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('video',15)} Consultation</h5>
+        <div class="booking-sheet">
+          <div class="bs-row"><span class="k">Type</span><span class="v">${esc(d.consultationType || 'In-clinic')}</span></div>
+          <div class="bs-row"><span class="k">Fee</span><span class="v" style="color:var(--success)"><b>${fee}</b></span></div>
+          <div class="bs-row"><span class="k">Duration</span><span class="v">${esc(String(d.durationMins || d.duration || 30))} mins</span></div>
+        </div>
+      </section>
+
+      <!-- Availability -->
+      <section>
+        <h5 style="font-weight:700;display:flex;gap:8px;align-items:center;margin-bottom:8px">${icon('clock',15)} Availability</h5>
+        <p class="text-faint" style="font-size:.74rem;margin-bottom:10px">Actual schedule from the doctor’s calendar. Slots update in real time based on bookings and leave.</p>
+        <div class="booking-sheet" style="display:grid;gap:4px">
+          ${weeklyRows}
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${availBadge}
+          ${next ? `<span class="text-faint" style="font-size:.76rem">Next available slot: <b style="color:var(--ink)">${fmtTime(next)} today</b></span>` : '<span class="text-faint" style="font-size:.76rem">No slots available today — try tomorrow</span>'}
+        </div>
+      </section>
     </div>
-    <div class="modal-foot">
+    <div class="modal-foot" style="justify-content:space-between">
       <button class="btn btn-outline btn-sm" data-close>Close</button>
       <button class="btn btn-primary btn-sm" id="dpSelect">${icon('calendarPlus', 15)} Select this doctor</button>
     </div>`, {

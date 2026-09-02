@@ -39,6 +39,25 @@ function patientDashboard(vp) {
   ${pageHead(`Good ${today.getHours() < 12 ? 'morning' : today.getHours() < 17 ? 'afternoon' : 'evening'}, ${esc(firstName)} 👋`, `${dayName}, ${dateStr} · Here's your health overview for today.`)}
   ${todayAppts.length ? heroToday(nextAppt, user.name) : heroWelcome(firstName)}
 
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px" class="smart-cta-grid">
+    <button class="btn btn-outline" style="justify-content:flex-start;text-align:left;padding:16px 18px;height:auto" data-nav="#/find">
+      <span class="notif-ic blue" style="width:44px;height:44px;border-radius:14px">${icon('stethoscope', 20)}</span>
+      <span style="flex:1">
+        <b style="display:block">Find a Doctor</b>
+        <small class="text-faint" style="font-weight:600">Search manually, view schedules &amp; book yourself</small>
+      </span>
+      ${icon('chevRight', 16)}
+    </button>
+    <button class="btn btn-primary" style="justify-content:flex-start;text-align:left;padding:16px 18px;height:auto" data-nav="#/smart">
+      <span class="notif-ic" style="width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.18);color:#fff">${icon('sparkles', 20)}</span>
+      <span style="flex:1">
+        <b style="display:block">🧠 Smart Doctor Recommendation</b>
+        <small style="font-weight:600;opacity:.85">Tell us what you need help with — we'll find a suitable doctor &amp; available appointment</small>
+      </span>
+      ${icon('chevRight', 16)}
+    </button>
+  </div>
+
   <div class="kpi-grid" style="margin-top:20px">
     ${kpi({ label: "Today's appointments", value: todayAppts.length, iconName: 'calendar', cls: 'blue' })}
     ${kpi({ label: 'Upcoming visits', value: upcoming.length, iconName: 'clock', cls: 'teal' })}

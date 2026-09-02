@@ -602,6 +602,20 @@ svg { display: block; flex: none; }
 .input-icon { position: relative; }
 .input-icon svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: var(--faint); pointer-events: none; }
 .input-icon .input { padding-left: 40px; }
+.input-icon.has-toggle .input,
+.input-icon input[data-pw-input] { padding-right: 44px; }
+/* ── Password eye button — theme-aware, inside input ── */
+.pw-toggle {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; display: grid; place-items: center;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  color: var(--faint); cursor: pointer;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.pw-toggle:hover { background: var(--surface-2); color: var(--blue); border-color: var(--hairline); }
+.pw-toggle:active { transform: translateY(-50%) scale(0.96); }
+.pw-toggle:focus-visible { outline: none; box-shadow: var(--ring); }
+.pw-toggle svg { position: static; transform: none; width: 17px; height: 17px; color: currentColor; pointer-events: none; }
 
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .form-grid .full { grid-column: 1 / -1; }
@@ -1724,3 +1738,12 @@ html.motion-off .blob, html.motion-off .auth-mock, html.motion-off .auth-feature
 @media (max-width: 900px) {
   .appt-tools .filter-bar { width: 100%; }
 }
+/* -- Smart Doctor Recommendation --------------------------- */
+.rec-reason {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  font-size: .82rem; color: var(--ink); font-weight: 600;
+}
+.rec-reason svg { width: 15px; height: 15px; color: var(--success); flex: none; }
+@media (max-width: 760px) { .smart-cta-grid { grid-template-columns: 1fr !important; } }

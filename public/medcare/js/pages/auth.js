@@ -2,7 +2,7 @@
 // Auth — welcome/role choice, patient & doctor login,
 // register / forgot / reset (real backend auth, no demo flows)
 // ─────────────────────────────────────────────────────────────
-import { icon, esc, toast } from '../core.js';
+import { icon, esc, toast, bindPasswordToggles } from '../core.js';
 import { login, register, forgotPassword, resetPassword } from '../store.js';
 import { registerPage, navigate, renderRoute } from '../router.js';
 
@@ -264,9 +264,10 @@ function loginPanel(role) {
         <label for="authPassword">Password <span class="req">*</span></label>
         <a class="auth-link" data-mode="forgot" style="font-size:.74rem;font-weight:700;color:var(--blue);cursor:pointer">Forgot password?</a>
       </div>
-      <div class="input-icon">
+      <div class="input-icon" style="position:relative">
         ${icon('lock', 17)}
-        <input class="input" type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" required />
+        <input class="input" type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" required style="padding-right:44px" />
+        <button type="button" class="pw-toggle" data-pw="authPassword" aria-label="Show password" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--faint);cursor:pointer;">${icon('eye', 17)}</button>
       </div>
       <small class="err">Password must be at least 8 characters</small>
     </div>
@@ -307,7 +308,7 @@ function registerPanel() {
     </div>
     <div class="field">
       <label>Password <span class="req">*</span></label>
-      <div class="input-icon">${icon('lock', 17)}<input class="input" type="password" id="regPassword" placeholder="Minimum 8 characters" required /></div>
+      <div class="input-icon" style="position:relative">${icon('lock', 17)}<input class="input" type="password" id="regPassword" placeholder="Minimum 8 characters" required style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="regPassword" aria-label="Show password" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--faint);cursor:pointer;">${icon('eye', 17)}</button></div>
       <small class="err">Password must be at least 8 characters</small>
     </div>
     <button class="btn btn-primary btn-block" type="submit" style="padding:13px">${icon('checkCircle', 17)} Create account</button>
@@ -351,12 +352,12 @@ function resetPanel() {
     </div>
     <div class="field">
       <label>New password <span class="req">*</span></label>
-      <div class="input-icon">${icon('lock', 17)}<input class="input" type="password" id="resetPass" placeholder="Minimum 8 characters" required /></div>
+      <div class="input-icon" style="position:relative">${icon('lock', 17)}<input class="input" type="password" id="resetPass" placeholder="Minimum 8 characters" required style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="resetPass" aria-label="Show password" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--faint);cursor:pointer;">${icon('eye', 17)}</button></div>
       <small class="err">Password must be at least 8 characters</small>
     </div>
     <div class="field">
       <label>Confirm password <span class="req">*</span></label>
-      <div class="input-icon">${icon('lock', 17)}<input class="input" type="password" id="resetConfirm" placeholder="Re-enter password" required /></div>
+      <div class="input-icon" style="position:relative">${icon('lock', 17)}<input class="input" type="password" id="resetConfirm" placeholder="Re-enter password" required style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="resetConfirm" aria-label="Show password" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--faint);cursor:pointer;">${icon('eye', 17)}</button></div>
       <small class="err">Passwords do not match</small>
     </div>
     <button class="btn btn-primary btn-block" type="submit" style="padding:13px">${icon('lock', 17)} Update password</button>
@@ -390,6 +391,8 @@ function wireAuth(container) {
       navigate('#/login?role=' + a.dataset.roleSwitch);
     });
   });
+
+  bindPasswordToggles(container);
 
   const fail = (field) => {
     field.classList.add('invalid');

@@ -9,10 +9,8 @@ import { toISO, fromISO, addDays, toast } from './core.js';
 
 const API = '/api';
 const SESSION_KEY = 'medcare-session';
-const VERIF_KEY = 'medcare-verif-requests';
 const LOCAL_HISTORY_KEY = 'medcare-local-history';
 const PROFILE_HISTORY_KEY = 'medcare-profile-history';
-const EXTRA_KEY = 'medcare-extra';
 const SESSION_KEYS = ['medcare-demo-v1', 'medcare-demo-session'];
 
 export const ROLES = { patient: 'Patient', doctor: 'Doctor', admin: 'Admin' };
@@ -91,16 +89,31 @@ async function api(path, opts = {}) {
   }
   let res;
   try {
-    res = await fetch(API + path, { method: opts.method || 'GET', headers, body });
-  } catch {
-    return { ok: false, status: 0, error: 'network' };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    res = await fetch(API + path, { method: opts.method || 'GET', headers, body, signal: controller.signal });
+    clearTimeout(timeout);
+  } catch (e) {
+    const isAbort = e && e.name === 'AbortError';
+    return { ok: false, status: 0, error: isAbort ? 'Request timed out' : 'network', data: null };
   }
   if (res.status === 401 && s && s.token) {
     setSession(null);
-    if (location.hash !== '#/welcome') location.hash = '#/welcome';
+    if (typeof location !== 'undefined' && location.hash !== '#/welcome') location.hash = '#/welcome';
   }
-  const data = await res.json().catch(() => null);
-  return { ok: res.ok, status: res.status, data };
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // Handle non-JSON or empty responses (e.g., 204)
+    data = null;
+  }
+  // api() always returns {ok, status, data} and an explicit error field for easier frontend handling
+  if (!res.ok) {
+    const errMsg = data && data.error ? data.error : `Request failed (${res.status})`;
+    return { ok: false, status: res.status, error: errMsg, data };
+  }
+  return { ok: true, status: res.status, data };
 }
 
 // ── value helpers ───────────────────────────────────────────
@@ -143,6 +156,11 @@ function mapDoctor(d) {
   const feeRaw = String(d.consultationFee ?? d.fee ?? '').replace(/[^\d.]/g, '');
   const rating = d.rating && d.rating.average != null ? d.rating.average : (d.rating ?? 0);
   const reviews = d.rating && d.rating.count != null ? d.rating.count : (d.reviews ?? 0);
+  // Build location from city/state/country if explicit location missing
+  const locParts = [d.city || '', d.state || ''].filter(Boolean);
+  const fallbackLocation = locParts.join(', ') || (d.location || '');
+  // Clinic address fallback
+  const clinicAddress = d.address ? `${d.clinic || ''}${d.city ? `, ${d.city}` : ''}${d.state ? `, ${d.state}` : ''}` : (d.clinic || 'MedCare Clinic');
   return {
     id: d.id,
     userId: d.userId,
@@ -150,13 +168,28 @@ function mapDoctor(d) {
     specialty: d.specialty || 'General Medicine',
     experience: d.experience || '0 yrs',
     clinic: d.clinic || 'MedCare Clinic',
-    location: d.location || '',
+    location: fallbackLocation,
+    clinicAddress: clinicAddress,
     education: d.qualifications || '',
+    qualifications: d.qualifications || '',
     fee: feeRaw ? Number(feeRaw) : 0,
+    consultationFee: d.consultationFee || feeRaw || '',
     bio: d.bio || '',
     phone: d.phone || '',
     email: d.email || '',
-    languages: '',
+    dob: d.dob || '',
+    gender: d.gender || '',
+    address: d.address || '',
+    city: d.city || '',
+    state: d.state || '',
+    country: d.country || '',
+    postalCode: d.postalCode || '',
+    licenseNumber: d.licenseNumber || '',
+    department: d.department || '',
+    languages: d.languages || '',
+    duration: d.durationMins ?? d.duration ?? 30,
+    durationMins: d.durationMins ?? d.duration ?? 30,
+    consultationType: d.consultationType || 'In-clinic',
     rating,
     reviews,
     color: 0,
@@ -166,7 +199,7 @@ function mapDoctor(d) {
     blocked: [],
     availableToday: null,
     nextSlot: null,
-    photo: d.avatar || '',
+    photo: d.avatar || d.photo || '',
   };
 }
 
@@ -183,19 +216,34 @@ function mapBlock(b) {
 
 function mapPatient(user, profile) {
   const p = profile || {};
+  const conditionsVal = p.conditions || p.condition || '';
   return {
     id: user.id,
     name: user.name || '',
     email: user.email || '',
     phone: user.phone || '',
+    photo: user.profilePhoto || user.photo || '',
     dob: p.dob || '',
     gender: p.gender || '',
     blood: p.bloodGroup || '',
     heightCm: p.height || p.heightCm || '',
     weightKg: p.weight || p.weightKg || '',
     allergies: p.allergies || '',
-    condition: p.conditions || p.condition || '',
+    conditions: conditionsVal,
+    condition: conditionsVal,
     medications: p.currentMedications || '',
+    currentMedications: p.currentMedications || '',
+    address: p.address || '',
+    city: p.city || '',
+    state: p.state || '',
+    country: p.country || '',
+    postalCode: p.postalCode || '',
+    preferredLanguage: p.preferredLanguage || '',
+    emergencyContactName: p.emergencyContactName || '',
+    emergencyContactPhone: p.emergencyContactPhone || '',
+    emergencyContactRelationship: p.emergencyContactRelationship || p.relationship || '',
+    emergencyContactAlternatePhone: p.emergencyContactAlternatePhone || '',
+    emergencyNotes: p.emergencyNotes || '',
     history: '',
     lastVisit: '',
   };
@@ -356,85 +404,140 @@ export async function bootstrap() {
   if (booted) return;
   if (bootPromise) return bootPromise;
   bootPromise = (async () => {
-    const me = currentUser();
-    if (!me) return;
-    cache.me = me;
-    cache.me = me;
-
-    const [dr, ap, rx, ntf] = await Promise.all([
-      api('/doctors'),
-      api('/appointments'),
-      api('/prescriptions'),
-      api('/notifications'),
-    ]);
-    cache.doctors = (dr.ok ? dr.data : []).map(mapDoctor).filter(Boolean);
-    cache.appointments = (ap.ok ? ap.data : []).map(mapAppointment).filter(Boolean);
-    cache.prescriptions = (rx.ok ? rx.data : []).map(mapPrescription).filter(Boolean);
-    cache.notifications = (ntf.ok ? ntf.data : []).map(mapNotification).filter(Boolean);
-
-    await Promise.all(cache.doctors.map(async d => {
-      const b = await api('/doctors/' + d.id + '/blocks');
-      if (b.ok) cache.blocks[d.id] = (b.data || []).map(mapBlock);
-    }));
-
-    const myDoc = cache.doctors.find(d => d.userId === me.userId);
-    if (me.role === 'doctor') {
-      const self = await api('/doctors/me');
-      if (self.ok) {
-        const idx = cache.doctors.findIndex(x => x.id === self.data.id);
-        const fresh = mapDoctor(self.data);
-        if (idx >= 0) cache.doctors[idx] = fresh;
-        else cache.doctors.push(fresh);
-        if (fresh.photo) syncSessionUser({ photo: fresh.photo });
-      }
-      if (myDoc) {
-        const bl = await api('/doctors/me/blocks');
-        if (bl.ok) cache.blocks[myDoc.id] = (bl.data || []).map(mapBlock);
-      }
-    }
-
-    if (me.role === 'admin') {
-      const u = await api('/users');
-      if (u.ok) {
-        cache.users = (u.data || []).filter(x => x.role !== 'doctor' && x.role !== 'admin');
-        await Promise.all(cache.users.map(async usr => {
-          const p = await api('/patients/' + usr.id + '/profile');
-          if (p.ok) cache.patients.push(mapPatient(p.data.user || usr, p.data.profile));
-        }));
-      }
-    } else if (me.role === 'doctor') {
-      const ids = [...new Set(cache.appointments.filter(a => a.doctorId === (myDoc ? myDoc.id : null)).map(a => a.patientId).filter(Boolean))];
-      await Promise.all(ids.map(async uid => {
-        const p = await api('/patients/' + uid + '/profile');
-        if (p.ok) cache.patients.push(mapPatient(p.data.user, p.data.profile));
-      }));
-    } else {
-      const p = await api('/patients/' + me.userId + '/profile');
-      if (p.ok) cache.patients.push(mapPatient(p.data.user || me, p.data.profile));
-    }
-
-    if (me.role === 'patient') {
-      const h = await api('/patients/' + me.userId + '/history');
-      if (h.ok) cache.history = buildHistory(h.data);
-    }
-
     try {
-      const localHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || '[]');
-      cache.history = [...cache.history, ...localHistory]
-        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    } catch { /* ignore */ }
+      const me = currentUser();
+      if (!me) {
+        booted = true;
+        return;
+      }
+      cache.me = me;
+      cache.me = me;
 
-    await Promise.all(cache.appointments.map(async a => {
-      const m = await api('/messages/appointment/' + a.id);
-      if (m.ok) msgs[a.id] = m.data;
-    }));
-    cache.threads = buildThreads(me);
-    decorateDoctors();
-    decoratePatients();
-    decorateAppointments();
-    booted = true;
+      let dr, ap, rx, ntf;
+      try {
+        [dr, ap, rx, ntf] = await Promise.all([
+          api('/doctors'),
+          api('/appointments'),
+          api('/prescriptions'),
+          api('/notifications'),
+        ]);
+      } catch (e) {
+        console.error('[bootstrap] initial fetch failed', e);
+        dr = { ok: false, data: [] }; ap = { ok: false, data: [] }; rx = { ok: false, data: [] }; ntf = { ok: false, data: [] };
+      }
+      try { cache.doctors = (dr.ok ? dr.data : []).map(mapDoctor).filter(Boolean); } catch (e) { console.error('[bootstrap] mapDoctor failed', e); cache.doctors = []; }
+      try { cache.appointments = (ap.ok ? ap.data : []).map(mapAppointment).filter(Boolean); } catch (e) { console.error('[bootstrap] mapAppointment failed', e); cache.appointments = []; }
+      try { cache.prescriptions = (rx.ok ? rx.data : []).map(mapPrescription).filter(Boolean); } catch (e) { cache.prescriptions = []; }
+      try { cache.notifications = (ntf.ok ? ntf.data : []).map(mapNotification).filter(Boolean); } catch (e) { cache.notifications = []; }
+
+      try {
+        await Promise.all(cache.doctors.map(async d => {
+          try {
+            const b = await api('/doctors/' + d.id + '/blocks');
+            if (b.ok) cache.blocks[d.id] = (b.data || []).map(mapBlock);
+          } catch (e) { console.error('[bootstrap] blocks fetch failed for', d.id, e); }
+        }));
+      } catch (e) { console.error('[bootstrap] blocks batch failed', e); }
+
+      const myDoc = cache.doctors.find(d => d.userId === me.userId);
+      if (me.role === 'doctor') {
+        try {
+          const self = await api('/doctors/me');
+          if (self.ok) {
+            const idx = cache.doctors.findIndex(x => x.id === self.data.id);
+            const fresh = mapDoctor(self.data);
+            if (idx >= 0) cache.doctors[idx] = fresh;
+            else cache.doctors.push(fresh);
+            if (fresh.photo) syncSessionUser({ photo: fresh.photo });
+          }
+        } catch (e) { console.error('[bootstrap] doctor self fetch failed', e); }
+        if (myDoc) {
+          try {
+            const bl = await api('/doctors/me/blocks');
+            if (bl.ok) cache.blocks[myDoc.id] = (bl.data || []).map(mapBlock);
+          } catch (e) { console.error('[bootstrap] doctor blocks fetch failed', e); }
+        }
+      }
+
+      if (me.role === 'admin') {
+        try {
+          const u = await api('/users');
+          if (u.ok) {
+            cache.users = (u.data || []).filter(x => x.role !== 'doctor' && x.role !== 'admin');
+            await Promise.all(cache.users.map(async usr => {
+              try {
+                const p = await api('/patients/' + usr.id + '/profile');
+                if (p.ok) cache.patients.push(mapPatient(p.data.user || usr, p.data.profile));
+              } catch (e) { console.error('[bootstrap] admin patient fetch failed', e); }
+            }));
+          }
+        } catch (e) { console.error('[bootstrap] admin users fetch failed', e); }
+      } else if (me.role === 'doctor') {
+        try {
+          const ids = [...new Set(cache.appointments.filter(a => a.doctorId === (myDoc ? myDoc.id : null)).map(a => a.patientId).filter(Boolean))];
+          await Promise.all(ids.map(async uid => {
+            try {
+              const p = await api('/patients/' + uid + '/profile');
+              if (p.ok) cache.patients.push(mapPatient(p.data.user, p.data.profile));
+            } catch (e) { console.error('[bootstrap] doctor patient fetch failed', e); }
+          }));
+        } catch (e) { console.error('[bootstrap] doctor patients batch failed', e); }
+      } else {
+        try {
+          const p = await api('/patients/' + me.userId + '/profile');
+          if (p.ok) cache.patients.push(mapPatient(p.data.user || me, p.data.profile));
+          else {
+            // Fallback: ensure at least a minimal patient record from session so profile is not empty
+            // This prevents endless skeleton when /patients/:id/profile fails but /profile succeeds later
+            if (!cache.patients.find(x => x.id === me.userId)) {
+              cache.patients.push(mapPatient({ id: me.userId, name: me.name, email: me.email, phone: me.phone, profilePhoto: me.photo || '' }, {}));
+            }
+          }
+        } catch (e) {
+          console.error('[bootstrap] patient profile fetch failed', e);
+          if (!cache.patients.find(x => x.id === me.userId)) {
+            cache.patients.push(mapPatient({ id: me.userId, name: me.name, email: me.email, phone: me.phone, profilePhoto: me.photo || '' }, {}));
+          }
+        }
+      }
+
+      if (me.role === 'patient') {
+        try {
+          const h = await api('/patients/' + me.userId + '/history');
+          if (h.ok) cache.history = buildHistory(h.data);
+        } catch (e) { console.error('[bootstrap] history fetch failed', e); }
+      }
+
+      try {
+        const localHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || '[]');
+        cache.history = [...cache.history, ...localHistory]
+          .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      } catch { /* ignore */ }
+
+      try {
+        await Promise.all(cache.appointments.map(async a => {
+          try {
+            const m = await api('/messages/appointment/' + a.id);
+            if (m.ok) msgs[a.id] = m.data;
+          } catch (e) { /* ignore per appointment */ }
+        }));
+      } catch (e) { console.error('[bootstrap] messages batch failed', e); }
+      try { cache.threads = buildThreads(me); } catch (e) { console.error('[bootstrap] buildThreads failed', e); cache.threads = []; }
+      try { decorateDoctors(); } catch (e) { console.error('[bootstrap] decorateDoctors failed', e); }
+      try { decoratePatients(); } catch (e) { console.error('[bootstrap] decoratePatients failed', e); }
+      try { decorateAppointments(); } catch (e) { console.error('[bootstrap] decorateAppointments failed', e); }
+      booted = true;
+    } catch (e) {
+      console.error('[bootstrap] fatal error', e);
+      booted = true;
+    }
   })();
-  await bootPromise;
+  try {
+    await bootPromise;
+  } catch (e) {
+    console.error('[bootstrap] promise rejected', e);
+    booted = true;
+  }
   if (!booted) bootPromise = null;
   return currentUser();
 }
@@ -445,7 +548,7 @@ export async function login(email, password) {
     return { ok: false, status: r.status, error: r.data && r.data.error ? r.data.error : 'Invalid email or password' };
   }
   const u = r.data.user;
-  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: '' } });
+  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: u.profilePhoto || u.photo || '' } });
   await bootstrap();
   return { ok: true, user: currentUser() };
 }
@@ -459,7 +562,7 @@ export async function register({ name, email, phone, password, role }) {
     return { ok: false, status: r.status, error: r.data && r.data.error ? r.data.error : 'Registration failed' };
   }
   const u = r.data.user;
-  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: '' } });
+  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: u.profilePhoto || u.photo || '' } });
   await bootstrap();
   return { ok: true, user: currentUser() };
 }
@@ -474,7 +577,7 @@ export async function resetPassword(token, password) {
   const r = await api('/auth/reset', { method: 'POST', body: { token, password } });
   if (!r.ok) return { ok: false, error: r.data && r.data.error ? r.data.error : 'Could not reset password' };
   const u = r.data.user;
-  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: '' } });
+  setSession({ token: r.data.token, user: { userId: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, photo: u.profilePhoto || u.photo || '' } });
   await bootstrap();
   return { ok: true, user: currentUser() };
 }
@@ -758,6 +861,35 @@ export async function bookAppointment(data) {
   return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Booking failed' };
 }
 
+// ── smart recommendation (patient) ──────────────────────────
+export async function getSmartRecommendation(input) {
+  const r = await api('/recommendations/doctor', { method: 'POST', body: input });
+  if (!r.ok) {
+    return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Could not find a doctor right now' };
+  }
+  return { ok: true, data: r.data };
+}
+
+export async function confirmSmartAppointment(payload) {
+  const r = await api('/recommendations/confirm', { method: 'POST', body: payload });
+  if (!r.ok) {
+    return {
+      ok: false,
+      status: r.status,
+      error: (r.data && r.data.error) || 'Could not confirm the appointment',
+      data: r.data || null,
+    };
+  }
+  const me = currentUser();
+  const real = mapAppointment({ ...r.data, userId: me ? me.userId : payload.patientId });
+  const temp = cache.appointments.find(a => a.id === real.id);
+  if (temp) cache.appointments[cache.appointments.indexOf(temp)] = real;
+  else cache.appointments.unshift(real);
+  decorateDoctors();
+  decorateAppointments();
+  return { ok: true, appointment: real };
+}
+
 export function updateAppointment(id, patch) {
   const idx = cache.appointments.findIndex(a => a.id === id);
   const prev = idx >= 0 ? { ...cache.appointments[idx] } : null;
@@ -874,121 +1006,169 @@ export function getPatient(id) {
   return cache.patients.find(p => p.id === id) || null;
 }
 
-function getExtra(id) {
-  try {
-    return JSON.parse(localStorage.getItem(EXTRA_KEY) || '{}')[id] || {};
-  } catch {
-    return {};
-  }
+// ── profile (authenticated user) ─────────────────────────────
+const profileListeners = new Set();
+export function onProfileUpdated(fn) {
+  profileListeners.add(fn);
+  return () => profileListeners.delete(fn);
+}
+function emitProfileUpdated() {
+  profileListeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
 }
 
-function saveExtra(id, extra) {
+export async function fetchProfile() {
+  const me = currentUser();
+  if (!me) return { ok: false, status: 401, error: 'Not signed in' };
   try {
-    const all = JSON.parse(localStorage.getItem(EXTRA_KEY) || '{}');
-    all[id] = extra;
-    localStorage.setItem(EXTRA_KEY, JSON.stringify(all));
-  } catch { /* ignore */ }
+    const r = await api('/profile');
+    if (!r.ok) {
+      return { ok: false, status: r.status, error: (r.error || r.data && r.data.error) || 'Could not load your profile' };
+    }
+    const d = r.data;
+    if (!d || !d.user) {
+      return { ok: false, status: 500, error: 'Invalid profile response from server' };
+    }
+    try {
+      syncSessionUser({
+        name: d.user.name,
+        email: d.user.email,
+        phone: d.user.phone || '',
+        photo: d.user.profilePhoto || '',
+        prefs: d.prefs || {},
+      });
+    } catch (e) {
+      console.error('[fetchProfile] syncSessionUser failed', e);
+    }
+    cache.me = currentUser();
+    try { localStorage.setItem('medcare-prefs', JSON.stringify(d.prefs || {})); } catch { /* ignore */ }
+
+    try {
+      if (d.user.role === 'doctor' && d.doctor) {
+        const fresh = mapDoctor({ ...d.doctor, rating: d.doctor.rating });
+        const existing = cache.doctors.find(x => x.id === fresh.id);
+        const merged = existing ? { ...existing, ...fresh, photo: fresh.photo || existing.photo } : fresh;
+        // ensure notifPrefs and other cache fields preserved but overridden with fresh
+        merged.notifPrefs = d.prefs || {};
+        if (existing) cache.doctors[cache.doctors.indexOf(existing)] = merged;
+        else cache.doctors.push(merged);
+        decorateDoctors();
+      } else if (d.user.role === 'patient') {
+        const pat = mapPatient(d.user, d.profile || {});
+        const existing = cache.patients.find(x => x.id === pat.id);
+        const merged = existing ? { ...existing, ...pat, photo: pat.photo || existing.photo } : pat;
+        merged.notifPrefs = d.prefs || {};
+        if (existing) cache.patients[cache.patients.indexOf(existing)] = merged;
+        else cache.patients.push(merged);
+        try { decoratePatients(); } catch (e) { console.error('[fetchProfile] decoratePatients failed', e); }
+        try { decorateAppointments(); } catch (e) { console.error('[fetchProfile] decorateAppointments failed', e); }
+      } else if (d.user.role === 'admin') {
+        // admin has no patient/doctor profile, just sync session
+      }
+    } catch (e) {
+      console.error('[fetchProfile] cache update failed', e);
+      // Still return success because profile was fetched; cache error is non-fatal
+    }
+    try { emitProfileUpdated(); } catch { /* ignore */ }
+    return { ok: true, data: d };
+  } catch (e) {
+    console.error('[fetchProfile] unexpected error', e);
+    return { ok: false, status: 0, error: e.message || 'Could not load your profile' };
+  }
 }
 
 export async function updateProfile(role, id, patch) {
   const me = currentUser();
-  const extra = { ...getExtra(id) };
+  if (!me) return { ok: false, error: 'Not signed in' };
 
-  const userPatch = {};
-  if (patch.name !== undefined) userPatch.name = String(patch.name).trim();
-  if (patch.phone !== undefined && role !== 'doctor') userPatch.phone = String(patch.phone).trim();
-
-  const profilePatch = {};
-  if (patch.dob !== undefined) profilePatch.dob = patch.dob;
-  if (patch.gender !== undefined) profilePatch.gender = patch.gender;
-  if (patch.blood !== undefined) profilePatch.bloodGroup = patch.blood;
-  if (patch.heightCm !== undefined) profilePatch.height = String(patch.heightCm);
-  if (patch.weightKg !== undefined) profilePatch.weight = String(patch.weightKg);
-  if (patch.allergies !== undefined) profilePatch.allergies = String(patch.allergies);
-  if (patch.condition !== undefined || patch.conditions !== undefined) profilePatch.conditions = String(patch.conditions ?? patch.condition);
-  if (patch.medications !== undefined) profilePatch.currentMedications = String(patch.medications);
-
-  const doctorPatch = {};
-  if (patch.specialty !== undefined) doctorPatch.specialty = patch.specialty;
-  if (patch.experience !== undefined) doctorPatch.experience = patch.experience;
-  if (patch.clinic !== undefined) doctorPatch.clinic = patch.clinic;
-  if (patch.education !== undefined) doctorPatch.qualifications = patch.education;
-  if (patch.fee !== undefined) doctorPatch.consultationFee = String(patch.fee).replace(/[^\d.]/g, '');
-  if (patch.bio !== undefined) doctorPatch.bio = patch.bio;
-  if (patch.email !== undefined && role === 'doctor') doctorPatch.email = patch.email;
-  if (patch.phone !== undefined && role === 'doctor') doctorPatch.phone = String(patch.phone).trim();
-
-  const skip = new Set(['name', 'phone', 'dob', 'gender', 'blood', 'heightCm', 'weightKg', 'allergies', 'conditions', 'condition', 'medications', 'specialty', 'experience', 'clinic', 'education', 'fee', 'bio', 'email', 'photo']);
-  for (const k of Object.keys(patch)) {
-    if (patch[k] === undefined || skip.has(k)) continue;
-    extra[k] = patch[k];
+  const fieldMap = {
+    name: 'name', email: 'email', phone: 'phone', dob: 'dob', gender: 'gender',
+    address: 'address', city: 'city', state: 'state', country: 'country', postalCode: 'postalCode',
+    preferredLanguage: 'preferredLanguage',
+    blood: 'bloodGroup', heightCm: 'height', weightKg: 'weight', allergies: 'allergies',
+    conditions: 'conditions', medications: 'currentMedications', emergencyNotes: 'emergencyNotes',
+    emergencyContactName: 'emergencyContactName', emergencyContactPhone: 'emergencyContactPhone',
+    emergencyContactRelationship: 'emergencyContactRelationship', emergencyContactAlternatePhone: 'emergencyContactAlternatePhone', relationship: 'emergencyContactRelationship',
+    specialty: 'specialty', experience: 'experience', clinic: 'clinic', education: 'qualifications',
+    fee: 'consultationFee', bio: 'bio', languages: 'languages', licenseNumber: 'licenseNumber',
+    department: 'department', duration: 'durationMins', consultationType: 'consultationType',
+  };
+  const body = {};
+  for (const [from, to] of Object.entries(fieldMap)) {
+    if (patch[from] !== undefined) body[to] = patch[from];
   }
-  saveExtra(id, extra);
+  // handle legacy key fee already mapped; also support duration alias
+  if (patch.durationMins !== undefined && body.durationMins === undefined) body.durationMins = patch.durationMins;
 
-  if (role === 'doctor') {
-    const d = cache.doctors.find(x => x.id === id);
-    if (d) {
-      mergeDefined(d, {
-        name: patch.name, specialty: patch.specialty, experience: patch.experience,
-        clinic: patch.clinic, education: patch.education, fee: patch.fee,
-        bio: patch.bio, email: patch.email, phone: patch.phone,
-      });
-      if (patch.photo) d.photo = patch.photo;
-    }
-  } else {
-    const pat = cache.patients.find(x => x.id === id);
-    if (pat) {
-      mergeDefined(pat, {
-        name: patch.name, phone: patch.phone, blood: patch.blood, heightCm: patch.heightCm,
-        weightKg: patch.weightKg, allergies: patch.allergies,
-        condition: patch.conditions ?? patch.condition, medications: patch.medications,
-        dob: patch.dob, gender: patch.gender,
-      });
+  // Sequential execution: prefs first, then profile, to avoid race
+  if (patch.notifPrefs && typeof patch.notifPrefs === 'object') {
+    const prefRes = await api('/profile/prefs', { method: 'PUT', body: { prefs: patch.notifPrefs } }).catch(() => ({ ok: false, status: 0, data: null }));
+    if (!prefRes.ok) {
+      return { ok: false, status: prefRes.status, error: (prefRes.data && prefRes.data.error) || 'Unable to save preferences. Please try again.' };
     }
   }
-
-  const calls = [];
-  if (Object.keys(userPatch).length) calls.push(api('/auth/me', { method: 'PUT', body: userPatch }));
-  if (Object.keys(profilePatch).length && role !== 'doctor') {
-    calls.push(api('/patients/' + id + '/profile', { method: 'PUT', body: profilePatch }));
-  }
-  if (Object.keys(doctorPatch).length) {
-    if (role === 'doctor') calls.push(api('/doctors/me', { method: 'PUT', body: doctorPatch }));
-    else if (me && me.role === 'admin') calls.push(api('/doctors/' + id, { method: 'PUT', body: doctorPatch }));
-  }
-  if (patch.photo && role === 'doctor') {
-    const fd = new FormData();
-    fd.append('photo', patch.photo);
-    calls.push(api('/doctors/me/photo', { method: 'POST', body: fd }).then(r => {
-      if (r.ok && r.data && r.data.avatar) {
-        const d = cache.doctors.find(x => x.id === id);
-        if (d) d.photo = r.data.avatar;
-        syncSessionUser({ photo: r.data.avatar });
+  if (Object.keys(body).length) {
+    const r = await api('/profile', { method: 'PUT', body }).catch(() => ({ ok: false, status: 0, data: null }));
+    if (!r.ok) {
+      return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Unable to save changes. Please try again.' };
+    }
+    const fetchRes = await fetchProfile();
+    if (!fetchRes.ok) {
+      // profile saved but cache refresh failed — still emit update
+      emitProfileUpdated();
+      return { ok: false, status: fetchRes.status, error: fetchRes.error || 'Saved but could not refresh profile. Please reload.' };
+    }
+    emitProfileUpdated();
+    try {
+      const log = JSON.parse(localStorage.getItem(PROFILE_HISTORY_KEY) || '[]');
+      const changed = Object.keys(patch).filter(k => patch[k] !== undefined && k !== 'notifPrefs');
+      if (changed.length) {
+        log.unshift({ id, role, field: changed.join(', '), value: JSON.stringify(patch), time: new Date().toISOString(), oldValue: '', newValue: JSON.stringify(patch), section: role });
+        localStorage.setItem(PROFILE_HISTORY_KEY, JSON.stringify(log.slice(0, 50)));
       }
-    }));
+    } catch { /* ignore */ }
+    return { ok: true, data: r.data };
   }
-  const settled = await Promise.all(calls.map(c => c.catch(() => ({ ok: false, status: 0 }))));
-  if (userPatch.name || userPatch.phone) syncSessionUser({ name: userPatch.name, phone: userPatch.phone });
-
-  try {
-    const log = JSON.parse(localStorage.getItem(PROFILE_HISTORY_KEY) || '[]');
-    const changed = Object.keys(patch).filter(k => patch[k] !== undefined);
-    if (changed.length) {
-      log.unshift({ id, role, field: changed.join(', '), value: JSON.stringify(patch), time: new Date().toISOString() });
-      localStorage.setItem(PROFILE_HISTORY_KEY, JSON.stringify(log.slice(0, 50)));
-    }
-  } catch { /* ignore */ }
-
-  return { ok: settled.every(r => r.ok) };
+  // only prefs were updated
+  await fetchProfile();
+  emitProfileUpdated();
+  return { ok: true, data: null };
 }
 
-export function requestVerificationChange(id, field, value) {
-  try {
-    const reqs = JSON.parse(localStorage.getItem(VERIF_KEY) || '[]');
-    reqs.push({ id, field, value, requestedAt: new Date().toISOString() });
-    localStorage.setItem(VERIF_KEY, JSON.stringify(reqs.slice(-50)));
-  } catch { /* ignore */ }
+export async function uploadProfilePhoto(file) {
+  const fd = new FormData();
+  fd.append('photo', file);
+  const r = await api('/profile/photo', { method: 'POST', body: fd });
+  if (!r.ok) {
+    return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Photo upload failed. Please try again.' };
+  }
+  await fetchProfile();
+  emitProfileUpdated();
+  return { ok: true, data: r.data };
+}
+
+export async function removeProfilePhoto() {
+  const r = await api('/profile/photo/remove', { method: 'POST' });
+  if (!r.ok) {
+    return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Could not remove your photo' };
+  }
+  await fetchProfile();
+  emitProfileUpdated();
   return { ok: true };
+}
+
+export async function updateNotifPrefs(prefs) {
+  const r = await api('/profile/prefs', { method: 'PUT', body: { prefs } });
+  if (!r.ok) {
+    return { ok: false, status: r.status, error: (r.data && r.data.error) || 'Could not save preferences' };
+  }
+  const me = currentUser();
+  syncSessionUser({ prefs: r.data.prefs });
+  const rec = me && me.role === 'doctor'
+    ? cache.doctors.find(d => d.userId === me.userId)
+    : cache.patients.find(p => p.id === (me ? me.userId : ''));
+  if (rec) rec.notifPrefs = r.data.prefs;
+  try { localStorage.setItem('medcare-prefs', JSON.stringify(r.data.prefs)); } catch { /* ignore */ }
+  return { ok: true, prefs: r.data.prefs };
 }
 
 export function getProfileHistory(role) {

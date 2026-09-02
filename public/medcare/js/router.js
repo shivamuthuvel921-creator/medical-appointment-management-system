@@ -2,7 +2,7 @@
 // MedCare router — hash routing, shell wiring, navigation
 // ─────────────────────────────────────────────────────────────
 import { icon, esc, avatar, toast, openModal, closeModal, debounce, todayISO, addDays, daysUntil } from './core.js';
-import { currentUser, logout, unreadCount, unreadMessages, globalSearch, getDoctor } from './store.js';
+import { currentUser, logout, unreadCount, unreadMessages, globalSearch, getDoctor, onProfileUpdated } from './store.js';
 import { initTheme, cycleThemeMode, themeModeLabel } from './theme.js';
 
 export { applyTheme } from './theme.js';
@@ -20,6 +20,7 @@ export const NAV = {
     { group: 'Overview', items: [
       { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
       { key: 'find', label: 'Find Doctors', icon: 'stethoscope' },
+      { key: 'smart', label: 'Smart Recommendation', icon: 'sparkles' },
     ]},
     { group: 'Appointments', items: [
       { key: 'scheduling', label: 'My Scheduling', icon: 'calendarPlus' },
@@ -188,7 +189,7 @@ function renderBottomNav(activeKey) {
     </button>`).join('');
 }
 
-function renderUser() {
+export function renderUser() {
   const u = currentUser();
   if (!u) return;
   const roleLabel = ROLE_TITLES[u.role] || 'User';
@@ -445,6 +446,7 @@ export function start() {
   initTheme();
   wireShell();
   checkApi();
+  onProfileUpdated(renderUser);
   window.addEventListener('hashchange', renderRoute);
   renderRoute();
 }

@@ -258,6 +258,13 @@ db.exec(`
     resolvedAt TEXT,
     FOREIGN KEY (userId) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS user_prefs (
+    userId TEXT PRIMARY KEY,
+    prefs TEXT DEFAULT '{}',
+    updatedAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 // ─── Migrations ──────────────────────────────────────
@@ -298,9 +305,35 @@ function migrate() {
   addColumn('doctors', 'consultationFee', "TEXT DEFAULT ''");
   addColumn('doctors', 'bio', "TEXT DEFAULT ''");
   addColumn('doctors', 'avatar', "TEXT DEFAULT ''");
+  addColumn('doctors', 'dob', "TEXT DEFAULT ''");
+  addColumn('doctors', 'gender', "TEXT DEFAULT ''");
+  addColumn('doctors', 'address', "TEXT DEFAULT ''");
+  addColumn('doctors', 'city', "TEXT DEFAULT ''");
+  addColumn('doctors', 'state', "TEXT DEFAULT ''");
+  addColumn('doctors', 'country', "TEXT DEFAULT ''");
+  addColumn('doctors', 'postalCode', "TEXT DEFAULT ''");
+  addColumn('doctors', 'licenseNumber', "TEXT DEFAULT ''");
+  addColumn('doctors', 'languages', "TEXT DEFAULT ''");
+  addColumn('doctors', 'department', "TEXT DEFAULT ''");
+  addColumn('doctors', 'durationMins', "INTEGER DEFAULT 30");
+  addColumn('doctors', 'consultationType', "TEXT DEFAULT 'In-clinic'");
   addColumn('attachments', 'category', "TEXT DEFAULT 'general'");
   addColumn('attachments', 'doctorComment', "TEXT DEFAULT ''");
   addColumn('medications', 'frequency', "TEXT DEFAULT ''");
+  addColumn('users', 'photo', "TEXT DEFAULT ''");
+  addColumn('users', 'email', "TEXT");
+  // patient_profiles extended fields for full profile support
+  addColumn('patient_profiles', 'address', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'city', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'state', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'country', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'postalCode', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'preferredLanguage', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'emergencyContactName', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'emergencyContactPhone', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'emergencyContactRelationship', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'emergencyContactAlternatePhone', "TEXT DEFAULT ''");
+  addColumn('patient_profiles', 'emergencyNotes', "TEXT DEFAULT ''");
 
   // Medication module tables may exist from an earlier schema; backfill missing columns.
   if (tableHasColumn('medications', 'name') && !tableHasColumn('medications', 'instructions')) {
@@ -411,13 +444,20 @@ export function getUserByEmail(email) {
 }
 
 export function getUserById(id) {
-  return db.prepare('SELECT id, name, email, phone, role, createdAt FROM users WHERE id = ?').get(id);
+  try {
+    return db.prepare('SELECT id, name, email, phone, role, createdAt, photo FROM users WHERE id = ?').get(id);
+  } catch {
+    // fallback for DBs where photo column hasn't been migrated yet
+    const row = db.prepare('SELECT id, name, email, phone, role, createdAt FROM users WHERE id = ?').get(id);
+    if (row) row.photo = '';
+    return row;
+  }
 }
 
 export function updateUserProfile(id, fields) {
   const sets = [];
   const params = [];
-  for (const key of ['name', 'phone']) {
+  for (const key of ['name', 'email', 'phone', 'photo']) {
     if (fields[key] !== undefined) {
       sets.push(`${key}=?`);
       params.push(fields[key]);
@@ -426,6 +466,19 @@ export function updateUserProfile(id, fields) {
   if (sets.length === 0) return getUserById(id);
   params.push(id);
   db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id=?`).run(...params);
+  return getUserById(id);
+}
+
+export function updateUserPhoto(id, photo) {
+  try {
+    db.prepare('UPDATE users SET photo=? WHERE id=?').run(photo || '', id);
+  } catch {
+    // if photo column missing, try to add it
+    if (!tableHasColumn('users', 'photo')) {
+      db.exec(`ALTER TABLE users ADD COLUMN photo TEXT DEFAULT ''`);
+      db.prepare('UPDATE users SET photo=? WHERE id=?').run(photo || '', id);
+    }
+  }
   return getUserById(id);
 }
 
@@ -756,7 +809,32 @@ export function createDoctor(doctor) {
 }
 
 export function updateDoctor(id, doctor) {
-  updateDoctorStmt.run({ ...doctor, id });
+  // Dynamic update to support extended profile fields (dob, address, etc.)
+  const allowed = ['name', 'specialty', 'experience', 'clinic', 'phone', 'email', 'qualifications', 'consultationFee', 'bio', 'avatar', 'dob', 'gender', 'address', 'city', 'state', 'country', 'postalCode', 'licenseNumber', 'languages', 'department', 'durationMins', 'consultationType'];
+  const sets = [];
+  const params = [];
+  let hasAllowed = false;
+  for (const k of allowed) {
+    if (doctor[k] !== undefined) {
+      hasAllowed = true;
+      sets.push(`${k}=?`);
+      params.push(doctor[k]);
+    }
+  }
+  if (hasAllowed) {
+    params.push(id);
+    try {
+      db.prepare(`UPDATE doctors SET ${sets.join(', ')} WHERE id=?`).run(...params);
+    } catch (e) {
+      // fallback to legacy prepared statement if dynamic columns missing
+      try { updateDoctorStmt.run({ ...doctor, id }); } catch {}
+    }
+    return getDoctorById(id);
+  }
+  // fallback: try legacy statement
+  try {
+    updateDoctorStmt.run({ ...doctor, id });
+  } catch {}
   return getDoctorById(id);
 }
 
@@ -796,20 +874,59 @@ export function getPatientProfile(userId) {
 }
 
 export function upsertPatientProfile(userId, fields) {
-  const allowed = ['dob', 'gender', 'bloodGroup', 'height', 'weight', 'allergies', 'conditions', 'currentMedications'];
+  const allowed = ['dob', 'gender', 'bloodGroup', 'height', 'weight', 'allergies', 'conditions', 'currentMedications', 'address', 'city', 'state', 'country', 'postalCode', 'preferredLanguage', 'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelationship', 'emergencyContactAlternatePhone', 'emergencyNotes'];
   const existing = getPatientProfile(userId);
   const merged = {};
-  for (const k of allowed) merged[k] = fields[k] !== undefined ? String(fields[k]) : (existing ? existing[k] ?? '' : '');
+  for (const k of allowed) merged[k] = fields[k] !== undefined ? String(fields[k]) : (existing ? (existing[k] ?? '') : '');
+  // Ensure table has all columns (migration may have just added them)
+  const cols = allowed.map(k => `${k}=excluded.${k}`).join(', ');
+  const insertCols = allowed.join(', ');
+  const insertVals = allowed.map(k => `@${k}`).join(', ');
   const upsert = db.prepare(`
-    INSERT INTO patient_profiles (userId, dob, gender, bloodGroup, height, weight, allergies, conditions, currentMedications, updatedAt)
-    VALUES (@userId, @dob, @gender, @bloodGroup, @height, @weight, @allergies, @conditions, @currentMedications, datetime('now'))
+    INSERT INTO patient_profiles (userId, ${insertCols}, updatedAt)
+    VALUES (@userId, ${insertVals}, datetime('now'))
     ON CONFLICT(userId) DO UPDATE SET
-      dob=excluded.dob, gender=excluded.gender, bloodGroup=excluded.bloodGroup, height=excluded.height,
-      weight=excluded.weight, allergies=excluded.allergies, conditions=excluded.conditions,
-      currentMedications=excluded.currentMedications, updatedAt=datetime('now')
+      ${cols}, updatedAt=datetime('now')
   `);
   upsert.run({ userId, ...merged });
   return getPatientProfile(userId);
+}
+
+// ─── User preferences & full profile ────────────────────
+
+export function getUserPrefs(userId) {
+  try {
+    const row = db.prepare('SELECT prefs FROM user_prefs WHERE userId = ?').get(userId);
+    if (!row) return {};
+    return JSON.parse(row.prefs || '{}');
+  } catch { return {}; }
+}
+
+export function setUserPrefs(userId, prefs) {
+  const clean = {};
+  for (const [k, v] of Object.entries(prefs || {})) {
+    if (typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') clean[k] = v;
+  }
+  const existing = getUserPrefs(userId);
+  const merged = { ...existing, ...clean };
+  const json = JSON.stringify(merged);
+  db.prepare(`
+    INSERT INTO user_prefs (userId, prefs, updatedAt) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(userId) DO UPDATE SET prefs=excluded.prefs, updatedAt=datetime('now')
+  `).run(userId, json);
+  return merged;
+}
+
+export function getFullProfile(userId) {
+  const user = getUserById(userId);
+  if (!user) return null;
+  let profile = null;
+  let doctor = null;
+  try { profile = getPatientProfile(userId) || null; } catch { profile = null; }
+  try { doctor = getDoctorByUserId(userId) || null; } catch { doctor = null; }
+  let prefs = {};
+  try { prefs = getUserPrefs(userId); } catch { prefs = {}; }
+  return { user, profile, doctor, prefs };
 }
 
 export function getHealthRecords(userId) {

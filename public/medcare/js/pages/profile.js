@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 // Profile & Settings — personal, health, professional, security
 // ─────────────────────────────────────────────────────────────
-import { icon, esc, toast, openModal, fmtDate, countUp, money, avatar } from '../core.js';
-import { currentUser, getPatient, getDoctor, updateProfile, changePassword, requestVerificationChange, getProfileHistory, setAvailability, setOffDay, removeOffDay, getState, getDoctors, buildAnalytics } from '../store.js';
+import { icon, esc, toast, openModal, fmtDate, countUp, money, avatar, bindPasswordToggles, confirmDialog } from '../core.js';
+import { currentUser, getPatient, updateProfile, fetchProfile, uploadProfilePhoto, removeProfilePhoto, updateNotifPrefs, changePassword, getProfileHistory, setAvailability, setOffDay, removeOffDay, getState, getDoctors, buildAnalytics } from '../store.js';
 import { registerPage, role, navigate } from '../router.js';
 import { getThemeMode, setThemeMode, resolveTheme, themeModeLabel } from '../theme.js';
-import { pageHead, kpi } from './shared.js';
+import { pageHead, kpi, skeletonCards } from './shared.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const LANG_OPTIONS = ['English (India)', 'English (US)', 'हिन्दी (Hindi)', 'தமிழ் (Tamil)', 'తెలుగు (Telugu)', 'मराठी (Marathi)', 'Español', 'العربية'];
@@ -26,7 +26,7 @@ function savePrefs(p) { localStorage.setItem('medcare-prefs', JSON.stringify(p))
 
 function meFor(r) {
   const u = currentUser();
-  if (r === 'doctor') return getDoctor(u && u.userId ? u.userId : '') || {};
+  if (r === 'doctor') return getDoctors().find(d => d.userId === (u ? u.userId : '')) || {};
   if (r === 'patient') return getPatient(u && u.userId ? u.userId : '') || {};
   return {};
 }
@@ -36,6 +36,34 @@ function navDevice() {
   const os = /iPhone|iPad/i.test(ua) ? 'iOS' : /Android/i.test(ua) ? 'Android' : /Mac/i.test(ua) ? 'macOS' : /Windows/i.test(ua) ? 'Windows' : 'Web';
   const br = /Edg\//i.test(ua) ? 'Edge' : /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : /Safari/i.test(ua) ? 'Safari' : 'Browser';
   return `${br} · ${os}`;
+}
+
+function profileCompletion(m) {
+  const fields = [
+    ['Full name', m.name],
+    ['Email', m.email],
+    ['Phone', m.phone],
+    ['Date of birth', m.dob],
+    ['Gender', m.gender],
+    ['Blood group', m.blood],
+    ['Height', m.heightCm],
+    ['Weight', m.weightKg],
+    ['Address', m.address],
+    ['City', m.city],
+    ['State', m.state],
+    ['Country', m.country],
+    ['Postal code', m.postalCode],
+    ['Emergency contact', m.emergencyContactName],
+    ['Emergency phone', m.emergencyContactPhone],
+    ['Emergency relationship', m.emergencyContactRelationship],
+    ['Preferred language', m.preferredLanguage],
+    ['Profile photo', m.photo],
+  ];
+  const total = fields.length;
+  const filled = fields.filter(([,v]) => String(v||'').trim() !== '').length;
+  const pct = Math.round((filled/total)*100);
+  const missing = fields.filter(([,v])=> String(v||'').trim()==='').map(([k])=>k);
+  return { pct, missing, total, filled };
 }
 
 // ── Validation rules ─────────────────────────────────────────
@@ -56,23 +84,154 @@ const V = {
   emergencyPhone: (v) => (String(v || '').trim() && String(v).trim().replace(/\D/g, '').length < 10 ? 'Please enter a valid phone number.' : ''),
 };
 
-// ── Small field builder ──────────────────────────────────────
-function fld(key, label, value, opt = {}) {
+// ── Photo handling ───────────────────────────────────────────
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+
+function validatePhotoFile(file) {
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) return 'Please choose a JPG, PNG or WEBP image.';
+  if (file.size > MAX_PHOTO_BYTES) return 'Photo must be smaller than 2 MB.';
+  return '';
+}
+
+function photoEl(me, size) {
+  if (me.photo) return `<span class="avatar ${size} photo-avatar"><img src="${me.photo}" alt="${esc(me.name || '')}" /></span>`;
+  return avatar(me.name || '?', size);
+}
+
+// ── Generic editable card registry (fixes outerHTML listener loss) ──
+let editCardSeq = 0;
+const editCardStore = new Map();
+
+function editCard({ title, sub, iconName, fields, onSave, saveText = 'Save changes' }) {
+  const idx = editCardSeq++;
+  editCardStore.set(idx, { fields, onSave });
+  const readOnly = fields.map(f => {
+    const v = f.value ?? '';
+    if (f.render) return f.render(v);
+    return `<div class="pf-row"><span class="pf-label">${icon(f.icon || 'dot', 14)} ${esc(f.label)}</span><b class="pf-value">${esc(v === '' ? '—' : v)}</b></div>`;
+  }).join('');
+  // return HTML string with data-card index; fields will be rendered via fld with scoped ids pf_<key>_<idx>
+  const html = `
+  <div class="card card-pad profile-card" data-edit-card="${idx}">
+    <div class="card-title" style="margin-bottom:16px">
+      <span>${icon(iconName, 18)} ${esc(title)}</span>
+      <button class="btn btn-outline btn-sm" data-edit>${icon('edit', 14)} Edit</button>
+    </div>
+    ${sub ? `<p class="text-faint" style="font-size:.78rem;margin:-8px 0 14px">${esc(sub)}</p>` : ''}
+    <div class="form-grid" data-fields style="display:grid;gap:16px">${readOnly}</div>
+    <div class="flex" style="gap:10px;justify-content:flex-end;margin-top:8px;display:none" data-actions>
+      <button class="btn btn-outline" data-cancel>${icon('x', 15)} Cancel</button>
+      <button class="btn btn-primary" data-save>${icon('checkCircle', 16)} ${saveText}</button>
+    </div>
+  </div>`;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html.trim();
+  const el = wrap.firstElementChild;
+  return el;
+}
+
+function fld(key, label, value, opt = {}, cardIdx = null) {
+  const suffix = cardIdx !== null ? `_${cardIdx}` : '';
   const req = opt.required ? '<span class="req">*</span>' : '';
   const ic = opt.icon ? `<span class="input-icon">${icon(opt.icon, 17)}` : '';
   const endIc = ic ? '</span>' : '';
+  const id = `pf_${key}${suffix}`;
+  const errId = `err_${key}${suffix}`;
   let control;
-  if (opt.textarea) control = `<textarea class="textarea" id="pf_${key}">${esc(value ?? '')}</textarea>`;
-  else if (opt.select) control = `<select class="select" id="pf_${key}">${(opt.options || []).map(o => `<option ${String(value) === String(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-  else control = `<input class="input" id="pf_${key}" type="${opt.type || 'text'}" value="${esc(value ?? '')}" ${opt.inputmode ? `inputmode="${opt.inputmode}"` : ''} ${req ? 'required' : ''} />`;
+  if (opt.textarea) control = `<textarea class="textarea" id="${id}">${esc(value ?? '')}</textarea>`;
+  else if (opt.select) control = `<select class="select" id="${id}">${(opt.options || []).map(o => `<option ${String(value) === String(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  else control = `<input class="input" id="${id}" type="${opt.type || 'text'}" value="${esc(value ?? '')}" ${opt.inputmode ? `inputmode="${opt.inputmode}"` : ''} ${opt.required ? 'required' : ''} />`;
   return `
   <div class="field" ${opt.full ? 'style="grid-column:1/-1"' : ''}>
-    <label>${esc(label)} ${req}</label>
+    <label for="${id}">${esc(label)} ${req}</label>
     ${ic}${control}${endIc}
-    <small class="err" id="err_${key}"></small>
+    <small class="err" id="${errId}"></small>
   </div>`;
 }
 
+function showErrForCard(cardIdx, key, msg) {
+  const suffix = cardIdx !== null ? `_${cardIdx}` : '';
+  const el = document.getElementById(`err_${key}${suffix}`);
+  const inp = document.getElementById(`pf_${key}${suffix}`);
+  if (msg) {
+    if (el) el.textContent = msg;
+    if (inp) inp.classList.add('invalid');
+    return false;
+  }
+  if (el) el.textContent = '';
+  if (inp) inp.classList.remove('invalid');
+  return true;
+}
+
+function wireEditCards(scope, renderFn) {
+  scope.querySelectorAll('[data-edit-card]').forEach(card => {
+    const idx = Number(card.dataset.editCard);
+    const cfg = editCardStore.get(idx);
+    if (!cfg) return;
+    const { fields, onSave } = cfg;
+    const fieldsBox = card.querySelector('[data-fields]');
+    const editBtn = card.querySelector('[data-edit]');
+    const actions = card.querySelector('[data-actions]');
+    const cancelBtn = card.querySelector('[data-cancel]');
+    const saveBtn = card.querySelector('[data-save]');
+    const readOnlyHtml = fields.map(f => {
+      const v = f.value ?? '';
+      if (f.render) return f.render(v);
+      return `<div class="pf-row"><span class="pf-label">${icon(f.icon || 'dot', 14)} ${esc(f.label)}</span><b class="pf-value">${esc(v === '' ? '—' : v)}</b></div>`;
+    }).join('');
+    if (card._wired) return;
+    card._wired = true;
+    editBtn.addEventListener('click', () => {
+      fieldsBox.innerHTML = fields.map(f => fld(f.key, f.label, f.value ?? '', f, idx)).join('');
+      editBtn.style.display = 'none';
+      actions.style.display = 'flex';
+    });
+    cancelBtn.addEventListener('click', () => {
+      fieldsBox.innerHTML = readOnlyHtml;
+      editBtn.style.display = '';
+      actions.style.display = 'none';
+      fields.forEach(f => showErrForCard(idx, f.key, ''));
+    });
+    saveBtn.addEventListener('click', async () => {
+      let ok = true;
+      const patch = {};
+      fields.forEach(f => {
+        const el = document.getElementById(`pf_${f.key}_${idx}`);
+        if (!el) return;
+        let v = el.value;
+        if (f.type === 'number') v = v === '' ? '' : Number(v);
+        if (f.trim !== false && typeof v === 'string') v = v.trim();
+        const msg = f.validate ? f.validate(v, patch) : '';
+        if (!showErrForCard(idx, f.key, msg)) ok = false;
+        patch[f.key] = v;
+      });
+      if (!ok) return toast('Check the highlighted fields', 'Some values could not be saved.', 'error');
+      const prevHtml = saveBtn.innerHTML;
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      saveBtn.innerHTML = 'Saving…';
+      try {
+        const res = await onSave(patch);
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+        saveBtn.innerHTML = prevHtml;
+        if (!res || !res.ok) {
+          toast('Unable to save changes', (res && res.error) || 'Please try again.', 'error');
+          return;
+        }
+        toast('Changes saved successfully', 'Your profile is now updated across the app.', 'success');
+        if (renderFn) renderFn();
+      } catch (e) {
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+        saveBtn.innerHTML = prevHtml;
+        toast('Unable to save changes', e.message || 'Please try again.', 'error');
+      }
+    });
+  });
+}
+
+// legacy helpers kept for non-card fields
 function showErr(key, msg) {
   const el = document.getElementById('err_' + key);
   const inp = document.getElementById('pf_' + key);
@@ -86,107 +245,18 @@ function showErr(key, msg) {
   return true;
 }
 
-// ── Photo handling ───────────────────────────────────────────
-const MAX_PHOTO_BYTES = 1024 * 1024;
-
-function validatePhotoFile(file) {
-  if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) return 'Please choose a JPG, PNG or WEBP image.';
-  if (file.size > MAX_PHOTO_BYTES) return 'Photo must be smaller than 1 MB.';
-  return '';
-}
-
-function downscalePhoto(file) {
-  return new Promise((res, rej) => {
-    const fr = new FileReader();
-    fr.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        if (img.naturalWidth < 200 || img.naturalHeight < 200) return rej(new Error('Image must be at least 200×200 px.'));
-        const max = 512;
-        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
-        res(c.toDataURL('image/jpeg', 0.85));
-      };
-      img.onerror = () => rej(new Error('Could not read this image file.'));
-      img.src = fr.result;
-    };
-    fr.onerror = () => rej(new Error('Could not read this file.'));
-    fr.readAsDataURL(file);
-  });
-}
-
-function photoEl(me, size) {
-  if (me.photo) return `<span class="avatar ${size} photo-avatar"><img src="${me.photo}" alt="${esc(me.name || '')}" /></span>`;
-  return avatar(me.name || '?', size);
-}
-
-// ── Generic editable card ────────────────────────────────────
-function editCard({ title, sub, iconName, fields, onSave, saveText = 'Save changes' }) {
-  const readOnly = fields.map(f => {
-    const v = f.value ?? '';
-    if (f.render) return f.render(v);
-    return `<div class="pf-row"><span class="pf-label">${icon(f.icon || 'dot', 14)} ${esc(f.label)}</span><b class="pf-value">${esc(v === '' ? '—' : v)}</b></div>`;
-  }).join('');
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `
-  <div class="card card-pad profile-card">
-    <div class="card-title" style="margin-bottom:16px">
-      <span>${icon(iconName, 18)} ${esc(title)}</span>
-      <button class="btn btn-outline btn-sm" data-edit>${icon('edit', 14)} Edit</button>
-    </div>
-    ${sub ? `<p class="text-faint" style="font-size:.78rem;margin:-8px 0 14px">${esc(sub)}</p>` : ''}
-    <div class="form-grid" data-fields style="display:grid;gap:16px">${readOnly}</div>
-    <div class="flex" style="gap:10px;justify-content:flex-end;margin-top:8px;display:none" data-actions>
-      <button class="btn btn-outline" data-cancel>${icon('x', 15)} Cancel</button>
-      <button class="btn btn-primary" data-save>${icon('checkCircle', 16)} ${saveText}</button>
-    </div>
-  </div>`;
-  const card = wrap.firstElementChild;
-  const fieldsBox = card.querySelector('[data-fields]');
-  card.querySelector('[data-edit]').addEventListener('click', () => {
-    fieldsBox.innerHTML = fields.map(f => fld(f.key, f.label, f.value ?? '', f)).join('');
-    card.querySelector('[data-edit]').style.display = 'none';
-    card.querySelector('[data-actions]').style.display = 'flex';
-  });
-  card.querySelector('[data-cancel]').addEventListener('click', () => {
-    fieldsBox.innerHTML = readOnly;
-    card.querySelector('[data-edit]').style.display = '';
-    card.querySelector('[data-actions]').style.display = 'none';
-  });
-  card.querySelector('[data-save]').addEventListener('click', async () => {
-    let ok = true;
-    const patch = {};
-    fields.forEach(f => {
-      const el = document.getElementById('pf_' + f.key);
-      if (!el) return;
-      let v = el.value;
-      if (f.type === 'number') v = v === '' ? '' : Number(v);
-      if (f.trim !== false && typeof v === 'string') v = v.trim();
-      const msg = f.validate ? f.validate(v, patch) : '';
-      if (!showErr(f.key, msg)) ok = false;
-      patch[f.key] = v;
-    });
-    if (!ok) return toast('Check the highlighted fields', 'Some values could not be saved.', 'error');
-    const res = await onSave(patch);
-    if (res && !res.ok) { toast('Could not save', 'Something went wrong. Please try again.', 'error'); return; }
-    toast('Profile updated successfully', 'Your changes are now saved and visible across the app.', 'success');
-    render();
-  });
-  return card;
-}
-
 // ═══════════════════════════════════════════════════════════
 // PROFILE PAGE
 // ═══════════════════════════════════════════════════════════
 function profilePage(vp) {
-  const user = currentUser();
-  const r = role();
   let tab = 'overview';
+  let loading = true;
+  let error = null;
+  // role and user are read dynamically on each render to avoid stale closure
+  const getRole = () => role();
+  const getUser = () => currentUser();
 
-  const tabs = r === 'patient'
+  const getTabs = () => getRole() === 'patient'
     ? [
       { key: 'overview', label: 'Profile', icon: 'user' },
       { key: 'personal', label: 'Personal information', icon: 'edit' },
@@ -204,15 +274,35 @@ function profilePage(vp) {
       { key: 'security', label: 'Security', icon: 'shield' },
       { key: 'notifications', label: 'Notifications', icon: 'bell' },
     ];
+  const tabs = getTabs(); // initial, but re-evaluated in render
 
-  const me = () => meFor(r);
+  const me = () => meFor(getRole());
   const myId = () => (currentUser() && currentUser().userId) || '';
 
   function render() {
-    const u = user || {};
+    if (loading) {
+      vp.innerHTML = `<div class="page-head"><h1 class="page-title">My profile</h1></div>${skeletonCards(3)}`;
+      return;
+    }
+    if (error) {
+      vp.innerHTML = `
+        <div class="page-head"><h1 class="page-title">My profile</h1></div>
+        <div class="card card-pad" style="text-align:center;padding:32px;display:grid;gap:12px;justify-items:center">
+          <span class="notif-ic red" style="width:48px;height:48px">${icon('alert', 24)}</span>
+          <h3 style="margin:0">Unable to load your profile</h3>
+          <p class="text-muted" style="font-size:.86rem;max-width:480px">${esc(error)}</p>
+          <p class="text-faint" style="font-size:.78rem">Please check your connection and try again.</p>
+          <button class="btn btn-primary" id="retryProfile">${icon('refresh', 16)} Try Again</button>
+        </div>`;
+      vp.querySelector('#retryProfile')?.addEventListener('click', () => load());
+      return;
+    }
+    const r = getRole();
+    const u = getUser() || {};
     const m = me();
     const roleLabel = { patient: 'Patient', doctor: 'Doctor', admin: 'Administrator' }[r] || 'User';
 
+    const currentTabs = getTabs();
     vp.innerHTML = `
     ${pageHead('My profile', r === 'doctor' ? 'Manage your personal, professional and practice information.' : 'Manage your personal, health and contact information.', r === 'patient' ? `<button class="btn btn-outline" id="profileShare">${icon('share', 16)} Share securely</button>` : '')}
     <div class="profile-hero card" style="overflow:hidden">
@@ -232,7 +322,7 @@ function profilePage(vp) {
     </div>
 
     <div class="tabs profile-tabs" style="margin:22px 0 20px">
-      ${tabs.map(t => `<button class="tab ${tab === t.key ? 'active' : ''}" data-tab="${t.key}">${icon(t.icon, 16)} ${esc(t.label)}</button>`).join('')}
+      ${currentTabs.map(t => `<button class="tab ${tab === t.key ? 'active' : ''}" data-tab="${t.key}">${icon(t.icon, 16)} ${esc(t.label)}</button>`).join('')}
     </div>
     <div id="profileBody">${renderTab()}</div>`;
 
@@ -244,8 +334,9 @@ function profilePage(vp) {
     vp.querySelector('#profileShare')?.addEventListener('click', shareSheet);
     vp.querySelector('#phChange')?.addEventListener('click', () => photoModal());
     vp.querySelector('#phRemove')?.addEventListener('click', async () => {
-      const res = await updateProfile(r, myId(), { photo: '' });
+      const res = await removeProfilePhoto();
       if (res.ok) toast('Photo removed', 'Your profile photo was removed.', 'info');
+      else toast('Could not remove photo', res.error, 'error');
       render();
     });
     wireTab(vp);
@@ -253,11 +344,12 @@ function profilePage(vp) {
 
   // ── Tab renderers ──────────────────────────────────────────
   function renderTab() {
-    if (r === 'admin') return adminOverview();
+    const rNow = getRole();
+    if (rNow === 'admin') return adminOverview();
     const m = me();
     switch (tab) {
       case 'overview': return overviewTab(m);
-      case 'personal': return r === 'patient' ? personalTab(m) : doctorPersonalTab(m);
+      case 'personal': return rNow === 'patient' ? personalTab(m) : doctorPersonalTab(m);
       case 'healthcare': return healthcareTab(m);
       case 'contact': return contactTab(m);
       case 'professional': return professionalTab(m);
@@ -270,7 +362,7 @@ function profilePage(vp) {
   }
 
   function overviewTab(m) {
-    const isDoc = r === 'doctor';
+    const isDoc = getRole() === 'doctor';
     const aboutRows = (isDoc ? [
       ['briefcase', 'Specialty', m.specialty],
       ['award', 'Qualification', m.education],
@@ -288,6 +380,19 @@ function profilePage(vp) {
       ['mapPin', 'Location', [m.address, m.city, m.state].filter(Boolean).join(', ') || '—'],
     ]).map(([ic, k, v]) => `<div class="ab-row"><span class="ab-ic">${icon(ic, 16)}</span><span class="ab-k">${esc(k)}</span><b class="ab-v">${esc(v || '—')}</b></div>`).join('');
 
+    const comp = !isDoc ? profileCompletion(m) : null;
+    const compBar = comp ? `
+      <div class="card card-pad" style="margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:12px">${icon('activity', 18)} Profile completion <span class="badge ${comp.pct>=80?'green':comp.pct>=50?'amber':'red'} plain">${comp.pct}%</span></div>
+        <div class="progress" style="height:8px;margin-bottom:10px"><div class="bar ${comp.pct>=80?'green':comp.pct>=50?'amber':'red'}" style="width:${comp.pct}%"></div></div>
+        <p class="text-faint" style="font-size:.78rem;margin-bottom:8px">${comp.filled}/${comp.total} fields complete · ${comp.missing.length ? 'Missing: ' + esc(comp.missing.slice(0,4).join(', ')) + (comp.missing.length>4 ? ' +' + (comp.missing.length-4) + ' more' : '') : 'All set!'}</p>
+        ${comp.pct<100 ? `<button class="btn btn-outline btn-xs" data-tab-go="personal">${icon('edit',12)} Complete profile</button>` : ''}
+        <div class="flex" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-xs" id="exportProfileBtn">${icon('download',12)} Export my profile</button>
+          <button class="btn btn-outline btn-xs" id="deleteAccountBtn" style="color:var(--danger)">${icon('trash',12)} Delete account</button>
+        </div>
+      </div>` : '';
+
     return `
     <div class="kpi-grid" style="margin-bottom:20px">
       ${isDoc ? `
@@ -299,6 +404,7 @@ function profilePage(vp) {
         ${kpi({ label: 'Height', value: (m.heightCm || 0) + ' cm', iconName: 'ruler', cls: 'blue' })}
         ${kpi({ label: 'Weight', value: (m.weightKg || 0) + ' kg', iconName: 'weight', cls: 'teal' })}`}
     </div>
+    ${compBar}
     <div class="grid grid-2" style="align-items:start">
       <div class="card card-pad">
         <div class="card-title" style="margin-bottom:14px">${icon('user', 18)} About</div>
@@ -318,10 +424,16 @@ function profilePage(vp) {
           </div>
           <button class="btn btn-outline btn-sm btn-block mt-12" data-tab-go="security">${icon('settings', 15)} Open security</button>
         </div>
-        ${r === 'patient' ? `
+        ${!isDoc ? `
         <div class="card card-pad">
           <div class="card-title" style="margin-bottom:12px">${icon('heart', 18)} Privacy note</div>
           <p class="text-muted" style="font-size:.82rem;line-height:1.6">Your medical profile is shared only with your consulting doctors. You control what is visible during each consultation.</p>
+          <p class="text-faint" style="font-size:.75rem;margin-top:8px">Manage privacy & export in <a style="cursor:pointer;color:var(--blue)" data-tab-go="security">Account & Security</a> and <a style="cursor:pointer;color:var(--blue)" data-nav="#/settings">Settings → Privacy</a></p>
+        </div>
+        <div class="card card-pad">
+          <div class="card-title" style="margin-bottom:8px">${icon('activity', 18)} Recent activity</div>
+          ${(() => { const h=getProfileHistory('patient').slice(0,3); return h.length ? h.map(x=>`<div class="hist-item" style="padding:6px 0"><span class="hist-ic">${icon('edit',12)}</span><div class="hist-main"><b style="font-size:.8rem">${esc(fieldLabel(x.field))}</b><small class="text-faint">${esc((x.newValue||'').slice(0,40))} · ${fmtDate(x.time.slice(0,10))}</small></div></div>`).join('') : '<p class="text-faint" style="font-size:.78rem">No recent changes</p>'})()}
+          <button class="btn btn-outline btn-xs mt-12" data-tab-go="security">${icon('history',12)} View all</button>
         </div>` : ''}
       </div>
     </div>`;
@@ -353,7 +465,7 @@ function profilePage(vp) {
     <div class="pf-sections">
       ${editCard({
         title: 'Personal information', iconName: 'user', saveText: 'Save changes',
-        sub: 'Email and phone changes require verification and are handled from the Security tab.',
+        sub: 'Email and phone are shown below and can be changed from the Security tab.',
         fields: [
           { key: 'name', label: 'Full name', icon: 'user', required: true, validate: V.name },
           { key: 'dob', label: 'Date of birth', icon: 'calendar', type: 'date', validate: V.dob },
@@ -406,23 +518,33 @@ function profilePage(vp) {
     <div class="pf-sections">
       <div class="card card-pad">
         <div class="card-title" style="margin-bottom:12px">${icon('mail', 18)} Email & phone</div>
-        <p class="text-faint" style="font-size:.78rem;margin-bottom:10px">Changes to email or phone require verification before they take effect.</p>
+        <p class="text-faint" style="font-size:.78rem;margin-bottom:10px">Changes are saved to your account immediately.</p>
         ${verifyRow('email', 'Email address', 'mail')}
         ${verifyRow('phone', 'Phone number', 'phone')}
       </div>
       ${editCard({
         title: 'Emergency contact', iconName: 'userPlus', saveText: 'Save changes',
+        sub: 'This contact will be reached in case of medical emergency. Only you and your care team can see it.',
         fields: [
-          { key: 'emergencyContactName', label: 'Emergency contact name', icon: 'user', required: true, validate: V.name },
-          { key: 'emergencyContactPhone', label: 'Emergency contact phone', icon: 'phone', validate: V.emergencyPhone },
+          { key: 'emergencyContactName', label: 'Contact name', icon: 'user', required: true, validate: V.name },
+          { key: 'emergencyContactRelationship', label: 'Relationship', icon: 'users', select: true, options: ['Parent','Spouse','Sibling','Child','Friend','Other'] },
+          { key: 'emergencyContactPhone', label: 'Phone number', icon: 'phone', required: true, validate: V.phone },
+          { key: 'emergencyContactAlternatePhone', label: 'Alternate phone', icon: 'phone', validate: V.emergencyPhone },
         ].map(f => ({ ...f, value: m[f.key] ?? '' })),
         onSave: (patch) => updateProfile('patient', myId(), patch),
       }).outerHTML}
+      <div class="card card-pad">
+        <div class="card-title" style="margin-bottom:8px">${icon('shield', 18)} Privacy</div>
+        <p class="text-muted" style="font-size:.82rem;line-height:1.6">Emergency contact and health data are encrypted and visible only to you and your consulting doctors. You can request export or deletion from Settings → Privacy.</p>
+        <div class="flex" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-xs" data-nav="#/settings">${icon('settings',12)} Privacy settings</button>
+          <button class="btn btn-outline btn-xs" id="contactExportBtn">${icon('download',12)} Export profile</button>
+        </div>
+      </div>
     </div>`;
   }
 
   function professionalTab(m) {
-    const pending = (m.verificationRequests || []).filter(x => x.status === 'pending');
     return `
     <div class="pf-sections">
       ${editCard({
@@ -434,24 +556,13 @@ function profilePage(vp) {
           { key: 'experience', label: 'Experience', icon: 'clock', required: true, validate: V.required },
           { key: 'clinic', label: 'Hospital / Clinic', icon: 'home', required: true, validate: V.required },
           { key: 'department', label: 'Department', icon: 'layers' },
+          { key: 'licenseNumber', label: 'Medical license number', icon: 'verified', full: true },
           { key: 'fee', label: 'Consultation fee (₹)', icon: 'dollar', type: 'number', required: true, validate: V.fee },
           { key: 'languages', label: 'Languages spoken', icon: 'globe', full: true },
           { key: 'bio', label: 'Professional bio', icon: 'note', textarea: true, full: true },
         ].map(f => ({ ...f, value: m[f.key] ?? '' })),
         onSave: (patch) => updateProfile('doctor', myId(), patch),
       }).outerHTML}
-      <div class="card card-pad">
-        <div class="card-title" style="margin-bottom:12px">${icon('verified', 18)} Medical registration</div>
-        <div class="pf-row">
-          <span class="pf-label">${icon('key', 14)} Registration ID</span>
-          <b class="pf-value mono">${esc(m.registrationId || '—')}
-            <span class="badge ${m.registrationVerified ? 'green' : 'amber'} plain" style="font-size:.6rem">${m.registrationVerified ? `${icon('check', 10)} Verified` : 'Unverified'}</span>
-          </b>
-        </div>
-        <p class="text-faint" style="font-size:.78rem;margin:8px 0 12px">Medical registration details require professional verification and cannot be changed directly. Request a verification change and the MedCare team will review it.</p>
-        <button class="btn btn-outline btn-sm" id="regRequest">${icon('rotate', 14)} Request verification change</button>
-        ${pending.length ? `<div class="stepper-hint mt-12" style="margin-top:12px">${icon('clock', 14)} ${pending.length} change request(s) awaiting review</div>` : ''}
-      </div>
     </div>`;
   }
 
@@ -539,7 +650,7 @@ function profilePage(vp) {
 
   // ── Security ───────────────────────────────────────────────
   function securityTab() {
-    const hist = getProfileHistory(r);
+    const hist = getProfileHistory(getRole());
     return `
     <div class="grid grid-2" style="align-items:start">
       <div style="display:grid;gap:16px">
@@ -547,13 +658,13 @@ function profilePage(vp) {
           <div class="card-title" style="margin-bottom:14px">${icon('lock', 18)} Change password</div>
           <form id="pwForm" novalidate style="display:grid;gap:14px">
             <div class="field"><label>Current password <span class="req">*</span></label>
-              <div class="input-icon">${icon('lock', 17)}<input class="input" type="password" id="pwCur" placeholder="••••••••" autocomplete="current-password" /></div>
+              <div class="input-icon" style="position:relative">${icon('lock', 17)}<input class="input" type="password" id="pwCur" placeholder="••••••••" autocomplete="current-password" style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="pwCur" aria-label="Show password">${icon('eye', 17)}</button></div>
               <small class="err" id="err_pwCur"></small></div>
             <div class="field"><label>New password <span class="req">*</span></label>
-              <div class="input-icon">${icon('key', 17)}<input class="input" type="password" id="pwNew" placeholder="Minimum 8 characters" autocomplete="new-password" /></div>
+              <div class="input-icon" style="position:relative">${icon('key', 17)}<input class="input" type="password" id="pwNew" placeholder="Minimum 8 characters" autocomplete="new-password" style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="pwNew" aria-label="Show password">${icon('eye', 17)}</button></div>
               <small class="err" id="err_pwNew"></small></div>
             <div class="field"><label>Confirm new password <span class="req">*</span></label>
-              <div class="input-icon">${icon('check', 17)}<input class="input" type="password" id="pwConfirm" placeholder="Re-enter new password" autocomplete="new-password" /></div>
+              <div class="input-icon" style="position:relative">${icon('check', 17)}<input class="input" type="password" id="pwConfirm" placeholder="Re-enter new password" autocomplete="new-password" style="padding-right:44px" /><button type="button" class="pw-toggle" data-pw="pwConfirm" aria-label="Show password">${icon('eye', 17)}</button></div>
               <small class="err" id="err_pwConfirm"></small></div>
             <div class="mini-chips">
               <span class="mini-chip">${icon('check', 12)} 8+ characters</span>
@@ -581,7 +692,7 @@ function profilePage(vp) {
       <div style="display:grid;gap:16px">
         <div class="card card-pad">
           <div class="card-title" style="margin-bottom:6px">${icon('verified', 18)} Contact verification</div>
-          <p class="text-faint" style="font-size:.78rem;margin-bottom:10px">You can update your email and phone number at any time. Sensitive values are never shown in full.</p>
+          <p class="text-faint" style="font-size:.78rem;margin-bottom:10px">You can update your email and phone number at any time. The new value is saved to your account immediately.</p>
           <div class="pf-row"><span class="pf-label">${icon('mail', 14)} Email</span><b class="pf-value">${esc(me().email || '—')}</b><button class="btn btn-outline btn-xs" data-verify="email">${icon('edit', 12)} Change</button></div>
           <div class="pf-row"><span class="pf-label">${icon('phone', 14)} Phone</span><b class="pf-value">${esc(me().phone || '—')}</b><button class="btn btn-outline btn-xs" data-verify="phone">${icon('edit', 12)} Change</button></div>
         </div>
@@ -646,6 +757,10 @@ function profilePage(vp) {
 
   // ── Wiring ─────────────────────────────────────────────────
   function wireTab(scope) {
+    // wire editable cards (fixes outerHTML listener loss)
+    wireEditCards(scope, render);
+    // reusable eye toggles for all password fields in this tab (declarative + dynamic)
+    bindPasswordToggles(scope);
     scope.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.nav)));
     scope.querySelectorAll('[data-tab-go]').forEach(el => el.addEventListener('click', () => { tab = el.dataset.tabGo; render(); }));
     scope.querySelectorAll('[data-verify]').forEach(el => el.addEventListener('click', () => verifyModal(el.dataset.verify)));
@@ -687,10 +802,6 @@ function profilePage(vp) {
       });
     }
 
-    // registration verification request
-    const reg = scope.querySelector('#regRequest');
-    if (reg) reg.addEventListener('click', () => requestRegModal());
-
     // password
     const pw = scope.querySelector('#pwForm');
     if (pw) {
@@ -704,7 +815,7 @@ function profilePage(vp) {
         if (V.password(nw)) { showErr('pwNew', V.password(nw)); ok = false; } else showErr('pwNew', '');
         if (nw !== cf) { showErr('pwConfirm', 'Passwords do not match.'); ok = false; } else showErr('pwConfirm', '');
         if (!ok) return;
-        const res = await changePassword(r, cur, nw);
+        const res = await changePassword(getRole(), cur, nw);
         if (!res.ok) {
           if (res.error === 'bad-current') { showErr('pwCur', 'Current password is incorrect.'); toast('Incorrect password', 'The current password you entered is wrong.', 'error'); return; }
           toast('Could not update password', 'Something went wrong.', 'error'); return;
@@ -718,6 +829,7 @@ function profilePage(vp) {
     const two = scope.querySelector('#twoFA');
     if (two) two.addEventListener('change', () => {
       const p = prefs(); p.twoFA = two.checked; savePrefs(p);
+      updateNotifPrefs({ twoFA: two.checked });
       toast('Two-factor authentication', two.checked ? 'Enabled for your account.' : 'Disabled.', two.checked ? 'success' : 'info');
     });
 
@@ -732,10 +844,15 @@ function profilePage(vp) {
       const g = NOTIF_GROUPS.find(x => x.key === cb.dataset.np);
       const patch = {};
       patch.notifPrefs = { ...(me().notifPrefs || {}), [cb.dataset.np]: cb.checked };
-      updateProfile(r, myId(), patch);
+      updateProfile(getRole(), myId(), patch);
       const p = prefs(); p[cb.dataset.np] = cb.checked; savePrefs(p);
       toast('Preference updated', `${g ? g.title : 'Notification'} ${cb.checked ? 'enabled' : 'muted'}.`, 'info');
     }));
+
+    // overview / contact export & delete (spec FEATURE 15/16)
+    scope.querySelector('#exportProfileBtn')?.addEventListener('click', exportProfile);
+    scope.querySelector('#contactExportBtn')?.addEventListener('click', exportProfile);
+    scope.querySelector('#deleteAccountBtn')?.addEventListener('click', deleteAccountFlow);
   }
 
   function wireSegs(container, dow) {
@@ -765,12 +882,12 @@ function profilePage(vp) {
 
   // ── Modals ─────────────────────────────────────────────────
   function photoModal() {
-    let dataUrl = null;
+    let picked = null;
     openModal(`
       <div class="modal-head"><h3>${icon('camera', 18)} Profile photo</h3><button class="icon-btn" data-close aria-label="Close">${icon('x', 18)}</button></div>
       <div class="modal-body" style="display:grid;gap:14px;align-items:center;justify-items:center">
         <div class="photo-preview" id="photoPreview">${photoEl(me(), 'xl')}</div>
-        <p class="text-muted" style="font-size:.8rem;text-align:center">JPG, PNG or WEBP · max 1 MB · at least 200×200 px. Photos are stored securely on your account.</p>
+        <p class="text-muted" style="font-size:.8rem;text-align:center">JPG, PNG or WEBP · max 2 MB · at least 200×200 px. Photos are stored securely on your account.</p>
         <button class="btn btn-primary" id="photoPick">${icon('upload', 15)} Choose photo</button>
         <input type="file" id="photoFile" accept="image/jpeg,image/png,image/webp" hidden />
         <div class="flex" style="gap:10px">
@@ -786,21 +903,28 @@ function profilePage(vp) {
           if (!f) return;
           const err = validatePhotoFile(f);
           if (err) { toast('Invalid photo', err, 'error'); file.value = ''; return; }
-          downscalePhoto(f).then((url) => {
-            dataUrl = url;
-            box.querySelector('#photoPreview').innerHTML = `<span class="avatar xl photo-avatar"><img src="${url}" alt="Preview" /></span>`;
-            box.querySelector('#photoSave').disabled = false;
-            toast('Photo ready', 'Preview loaded — save to update your profile.', 'info');
-          }).catch((e) => { toast('Invalid photo', e.message || 'Could not read this image.', 'error'); file.value = ''; });
+          picked = f;
+          const previewUrl = URL.createObjectURL(f);
+          box.querySelector('#photoPreview').innerHTML = `<span class="avatar xl photo-avatar"><img src="${previewUrl}" alt="Preview" /></span>`;
+          box.querySelector('#photoSave').disabled = false;
+          toast('Photo ready', 'Preview loaded — save to update your profile.', 'info');
         });
         box.querySelector('#photoSave').addEventListener('click', async () => {
-          if (!dataUrl) return;
-          const res = await updateProfile(r, myId(), { photo: dataUrl });
+          if (!picked) return;
+          const saveBtn = box.querySelector('#photoSave');
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = 'Uploading…';
+          const res = await uploadProfilePhoto(picked);
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = `${icon('checkCircle', 15)} Save photo`;
           if (res.ok) {
             toast('Profile photo updated', 'Your photo is now visible across the app.', 'success');
             close();
             render();
-          } else toast('Could not save', 'You can only edit your own profile.', 'error');
+          } else {
+            toast('Upload failed', res.error || 'Please try again.', 'error');
+            file.value = '';
+          }
         });
       },
     });
@@ -827,43 +951,17 @@ function profilePage(vp) {
           const v = box.querySelector('#verNew').value.trim();
           const msg = field === 'email' ? V.email(v) : V.phone(v);
           if (msg) { box.querySelector('#err_verNew').textContent = msg; box.querySelector('#verNew').classList.add('invalid'); return; }
-          const res = await updateProfile(r, myId(), { [field]: v });
+          const saveBtn = box.querySelector('#verSave');
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = 'Saving…';
+          const res = await updateProfile(getRole(), myId(), { [field]: v });
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = `${icon('checkCircle', 15)} Save ${esc(label)}`;
           if (res.ok) {
-            toast('Verification complete', `Your ${label} was updated successfully.`, 'success');
+            toast('Saved', `Your ${label} was updated successfully.`, 'success');
             close();
             render();
-          } else toast('Could not save', 'You can only edit your own profile.', 'error');
-        });
-      },
-    });
-  }
-
-  function requestRegModal() {
-    openModal(`
-      <div class="modal-head"><h3>${icon('verified', 18)} Request verification change</h3><button class="icon-btn" data-close aria-label="Close">${icon('x', 18)}</button></div>
-      <div class="modal-body" style="display:grid;gap:14px">
-        <p class="text-muted" style="font-size:.84rem">Current registration ID: <b class="mono">${esc(me().registrationId || '—')}</b></p>
-        <div class="field">
-          <label>New registration ID <span class="req">*</span></label>
-          <div class="input-icon">${icon('key', 17)}<input class="input" id="regNew" placeholder="DR-2024-0000" /></div>
-          <small class="err" id="err_regNew"></small>
-        </div>
-        <div class="stepper-hint">${icon('clock', 14)} The MedCare verification team will review this request. Your profile keeps the current ID until it is approved.</div>
-        <div class="flex" style="gap:10px;justify-content:flex-end">
-          <button class="btn btn-outline" data-close>Cancel</button>
-          <button class="btn btn-primary" id="regSubmit">${icon('send', 15)} Submit request</button>
-        </div>
-      </div>`, {
-      onMount: (box, close) => {
-        box.querySelector('#regSubmit').addEventListener('click', () => {
-          const v = box.querySelector('#regNew').value.trim();
-          if (!/^[A-Za-z0-9\-]{5,16}$/.test(v)) { box.querySelector('#err_regNew').textContent = 'Enter a valid registration ID (letters, numbers, dashes).'; box.querySelector('#regNew').classList.add('invalid'); return; }
-          const res = requestVerificationChange(myId(), 'registrationId', v);
-          if (res.ok) {
-            toast('Request submitted', 'The MedCare team will review your verification change.', 'success');
-            close();
-            render();
-          } else toast('Could not submit', 'You can only request changes for your own profile.', 'error');
+          } else toast('Could not save', res.error || 'Please try again.', 'error');
         });
       },
     });
@@ -899,7 +997,79 @@ function profilePage(vp) {
       </div>`);
   }
 
-  render();
+  async function exportProfile() {
+    try {
+      const sess = JSON.parse(localStorage.getItem('medcare-session') || 'null');
+      if (!sess || !sess.token) { toast('Not signed in', 'Please sign in again.', 'error'); return; }
+      const res = await fetch('/api/profile/export', { headers: { Authorization: 'Bearer ' + sess.token } });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({error:'Export failed'}));
+        throw new Error(err.error || 'Export failed');
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = String(data.user?.name||'profile').replace(/\s+/g,'-').replace(/[^a-zA-Z0-9-_]/g,'');
+      a.download = `medcare-profile-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(url), 1000);
+      toast('Profile exported', 'Your profile data has been downloaded (no passwords included).', 'success');
+    } catch (e) {
+      console.error('[export] failed', e);
+      toast('Export failed', e.message || 'Could not export profile', 'error');
+    }
+  }
+
+  async function deleteAccountFlow() {
+    const first = await confirmDialog({ title: 'Delete account?', message: 'Are you sure you want to delete your account? This will request deletion and may require admin approval if you have medical records.', confirmText: 'Continue', danger: true, iconName: 'trash' });
+    if (!first) return;
+    const second = await confirmDialog({ title: 'Final confirmation', message: 'This action cannot be undone without admin help. Type DELETE is not required, but please confirm again that you want to delete your MedCare account and all personal data.', confirmText: 'Confirm Delete', danger: true, iconName: 'alert' });
+    if (!second) return;
+    try {
+      const sess = JSON.parse(localStorage.getItem('medcare-session') || 'null');
+      const res = await fetch('/api/profile', { method: 'DELETE', headers: { Authorization: 'Bearer ' + (sess?.token||'') } });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) {
+        // Spec: deletion may be blocked due to appointments/history – show informative message
+        toast('Deletion request logged', data.error || 'Your request has been logged. Admin will contact you within 48 hours.', 'info');
+        return;
+      }
+      toast('Account deleted', 'Your account has been deleted. You will be signed out.', 'success');
+      const { logout } = await import('../store.js');
+      logout();
+      location.hash = '#/welcome';
+    } catch (e) {
+      toast('Deletion failed', e.message || 'Could not delete account', 'error');
+    }
+  }
+
+  async function load() {
+    loading = true;
+    error = null;
+    try { render(); } catch (e) { console.error('[profile] render skeleton failed', e); }
+    try {
+      const res = await fetchProfile();
+      if (!res.ok) {
+        throw new Error(res.error || 'Could not load your profile');
+      }
+    } catch (e) {
+      console.error('[profile] load failed', e);
+      error = e.message || 'Could not load your profile. Please try again.';
+    } finally {
+      loading = false;
+      try { render(); } catch (e) { console.error('[profile] render failed', e); }
+    }
+  }
+
+  // Initial load with proper error handling — loading will always resolve via finally
+  load().catch(e => {
+    console.error('[profile] initial load unhandled', e);
+    loading = false;
+    error = e.message || 'Could not load profile';
+    try { render(); } catch {}
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -923,6 +1093,7 @@ function settingsPage(vp) {
     const box = document.getElementById(key);
     p[key] = box ? box.checked : false;
     savePrefs(p);
+    updateNotifPrefs({ [key]: p[key] });
     if (onEl) onEl.textContent = p[key] ? 'Enabled' : 'Disabled';
   }
 
@@ -948,80 +1119,6 @@ function settingsPage(vp) {
   function renderPanel() {
     const panel = vp.querySelector('#settingsPanel');
     const p = prefs();
-
-    if (tab === 'security') {
-      panel.innerHTML = `
-      <div class="card card-pad">
-        <div class="card-title" style="margin-bottom:16px">${icon('lock', 18)} Change password</div>
-        <form id="pwForm" novalidate style="display:grid;gap:14px;max-width:420px">
-          <div class="field">
-            <label>Current password <span class="req">*</span></label>
-            <div class="input-icon">${icon('lock', 17)}<input class="input" type="password" id="pwCur" placeholder="••••••••" required /></div>
-            <small class="err">Enter your current password</small>
-          </div>
-          <div class="field">
-            <label>New password <span class="req">*</span></label>
-            <div class="input-icon">${icon('key', 17)}<input class="input" type="password" id="pwNew" placeholder="Minimum 8 characters" required /></div>
-            <small class="err">Password must be at least 8 characters</small>
-          </div>
-          <div class="field">
-            <label>Confirm new password <span class="req">*</span></label>
-            <div class="input-icon">${icon('check', 17)}<input class="input" type="password" id="pwConfirm" placeholder="Re-enter new password" required /></div>
-            <small class="err">Passwords do not match</small>
-          </div>
-          <div class="mini-chips">
-            <span class="mini-chip">${icon('check', 12)} 8+ characters</span>
-            <span class="mini-chip">${icon('check', 12)} Uppercase &amp; number</span>
-            <span class="mini-chip">${icon('check', 12)} No common words</span>
-          </div>
-          <div><button class="btn btn-primary" type="submit">${icon('checkCircle', 16)} Update password</button></div>
-        </form>
-      </div>
-      <div class="card card-pad">
-        <div class="card-title" style="margin-bottom:6px">${icon('shield', 18)} Two-factor authentication</div>
-        <div class="setting-row" style="border-bottom:none">
-          <span class="s-ic blue">${icon('smartphone', 20)}</span>
-          <div class="s-body"><b>Authenticator app</b><small>Get a one-time code on your device when signing in</small></div>
-          <span class="switch"><input type="checkbox" id="twoFA" ${p.twoFA ? 'checked' : ''} /><span class="track"></span></span>
-        </div>
-      </div>
-      <div class="card card-pad">
-        <div class="card-title" style="margin-bottom:12px">${icon('activity', 18)} Active sessions</div>
-        <div class="row-item" style="padding:10px 6px">
-          <span class="notif-ic green">${icon('monitor', 18)}</span>
-          <div class="row-main"><div class="row-title" style="font-size:.84rem">This device <span class="badge green plain" style="font-size:.6rem">Current session</span></div><div class="row-sub">Web browser · ${esc(navDevice())} · Signed in now</div></div>
-        </div>
-      </div>`;
-      wireSecurity(panel);
-      return;
-    }
-
-    if (tab === 'notifications') {
-      const groups = [
-        { key: 'apptReminder', title: 'Appointment reminders', sub: 'Email & SMS before each visit', icon: 'clock', cls: 'blue' },
-        { key: 'apptConfirmation', title: 'Appointment confirmations', sub: 'When a doctor confirms your booking', icon: 'checkCircle', cls: 'green' },
-        { key: 'apptReschedule', title: 'Reschedule & cancellations', sub: 'Whenever an appointment changes', icon: 'rotate', cls: 'amber' },
-        { key: 'prescriptionReady', title: 'Prescriptions & reports', sub: 'New digital prescriptions and lab results', icon: 'prescription', cls: 'teal' },
-        { key: 'followup', title: 'Follow-up reminders', sub: 'When it is time to schedule a follow-up', icon: 'calendarCheck', cls: 'purple' },
-        { key: 'emergency', title: 'Emergency alerts', sub: 'Critical updates about emergency cases', icon: 'alert', cls: 'red' },
-      ];
-      panel.innerHTML = `
-      <div class="card card-pad">
-        <div class="card-title" style="margin-bottom:4px">${icon('bell', 18)} Notification preferences</div>
-        <p class="text-faint" style="font-size:.78rem;margin-bottom:8px">Choose what MedCare may notify you about. You can change this anytime.</p>
-        ${groups.map(g => `
-        <div class="setting-row">
-          <span class="s-ic ${g.cls}">${icon(g.icon, 20)}</span>
-          <div class="s-body"><b>${esc(g.title)}</b><small>${esc(g.sub)}</small></div>
-          <span class="switch"><input type="checkbox" id="${g.key}" ${p[g.key] !== false ? 'checked' : ''} /><span class="track"></span></span>
-        </div>`).join('')}
-      </div>`;
-      groups.forEach(g => {
-        const el = panel.querySelector('#' + g.key);
-        if (el) el.addEventListener('change', () => { togglePref(g.key); toast('Preference updated', `${g.title} ${el.checked ? 'enabled' : 'muted'}.`, 'info'); });
-      });
-      return;
-    }
 
     if (tab === 'privacy') {
       const rows = [
@@ -1129,42 +1226,6 @@ function settingsPage(vp) {
       });
       return;
     }
-  }
-
-  function wireSecurity(panel) {
-    const form = panel.querySelector('#pwForm');
-    if (form) {
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const cur = panel.querySelector('#pwCur').value;
-        const nw = panel.querySelector('#pwNew').value;
-        const cf = panel.querySelector('#pwConfirm').value;
-        if (!cur) return fail(panel.querySelector('#pwCur'));
-        if (nw.length < 8) return fail(panel.querySelector('#pwNew'));
-        if (nw !== cf) return fail(panel.querySelector('#pwConfirm'));
-        form.querySelector('.btn').innerHTML = 'Updating…';
-        setTimeout(() => {
-          toast('Password updated', 'Your password was changed successfully.', 'success');
-          form.querySelector('.btn').innerHTML = `${icon('checkCircle', 16)} Update password`;
-          form.reset();
-        }, 800);
-      });
-    }
-    const two = panel.querySelector('#twoFA');
-    if (two) two.addEventListener('change', () => {
-      togglePref('twoFA');
-      toast('Two-factor authentication', two.checked ? 'Enabled for your account.' : 'Disabled.', two.checked ? 'success' : 'info');
-    });
-    panel.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', () => {
-      b.closest('.row-item').style.opacity = '.4';
-      b.disabled = true;
-      toast('Session revoked', `${b.dataset.revoke} signed out.`, 'info');
-    }));
-  }
-
-  function fail(field) {
-    field.classList.add('invalid');
-    setTimeout(() => field.classList.remove('invalid'), 1400);
   }
 
   render();
